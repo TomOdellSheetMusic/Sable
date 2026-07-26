@@ -1,6 +1,6 @@
 import type { MouseEventHandler } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Avatar, Box, Chip, Header, IconButton, Scroll, Text, config, toRem } from 'folds';
+import { Avatar, Badge, Box, Chip, Header, IconButton, Scroll, Text, config, toRem } from 'folds';
 import {
   ArrowLeft,
   CaretUp,
@@ -97,18 +97,12 @@ function NotificationItem({
         event={event}
         renderContent={renderContent}
         actions={
-          <>
+          // One element: MessagePreview drops this straight into a
+          // justifyContent="SpaceBetween" row, so separate children get spread
+          // across its full width instead of grouping on the right.
+          <Box shrink="No" gap="200" alignItems="Center">
             {!isRead && (
-              <Box
-                style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  background: 'currentColor',
-                  flexShrink: 0,
-                }}
-                aria-label="Unread"
-              />
+              <Badge variant="Secondary" size="200" fill="Solid" radii="Pill" outlined={false} />
             )}
             <Chip onClick={handleOpen} variant="Secondary" radii="400">
               <Text size="T200">Open</Text>
@@ -116,7 +110,7 @@ function NotificationItem({
             <Chip onClick={handleDismiss} variant="Surface" radii="400">
               <Text size="T200">Done</Text>
             </Chip>
-          </>
+          </Box>
         }
         onOpen={handleOpen}
         hour24Clock={hour24Clock}

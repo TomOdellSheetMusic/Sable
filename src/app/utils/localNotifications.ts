@@ -12,7 +12,7 @@ export type StoredNotification = {
   dismissed?: boolean;
 };
 
-export const MAX_BODY_LENGTH = 500;
+export const MAX_BODY_LENGTH = 120;
 
 // HTML cannot be sliced without breaking tags, so oversized messages lose it.
 // Ciphertext is dropped: multi-KB, shares the session's localStorage budget, and

@@ -38,6 +38,10 @@ import { SlidingSyncSidebarCache } from './slidingSyncSidebarCache';
 import { hydrateRoomMember } from './roomMemberHydration';
 import { clearCachedUserProfiles } from './userProfileCache';
 import {
+  clearLocalNotificationCache,
+  destroyLocalNotificationCache,
+} from './localNotificationCache';
+import {
   primeVersionsFromCache,
   revalidateVersionsCache,
   clearCachedVersions,
@@ -610,6 +614,8 @@ export const logoutClient = async (mx: MatrixClient, session?: Session) => {
     SlidingSyncSidebarCache.clear(session.userId);
     clearCachedVersions(session.baseUrl, session.userId);
     clearCachedUserProfiles(session.userId);
+    destroyLocalNotificationCache(session.userId);
+    clearLocalNotificationCache(session.userId);
     const storeName: SessionStoreName = getSessionStoreName(session);
     await mx.clearStores({ cryptoDatabasePrefix: storeName.rustCryptoPrefix });
     await deleteDatabase(storeName.sync);

@@ -10,6 +10,7 @@ import { NotificationTransportRuntimeFeature } from '$features/settings/notifica
 import {
   InviteNotifications,
   MessageNotifications,
+  NotificationRecorder,
   HandleNotificationClick,
   SyncNotificationSettingsWithServiceWorker,
   HandleDecryptPushEvent,
@@ -52,6 +53,7 @@ export function ClientNonUIFeatures({ children }: ClientNonUIFeaturesProps) {
       <PageTitleUpdater />
       <InviteNotifications />
       <MessageNotifications />
+      <NotificationRecorder />
       <NativeNotificationClickRouting />
       <NativeNotificationActionRouting />
       <BackgroundNotifications />

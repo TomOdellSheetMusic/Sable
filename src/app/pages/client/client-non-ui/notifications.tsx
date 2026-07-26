@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { RoomEventHandlerMap } from '$types/matrix-sdk';
 import {
+  ClientEvent,
   MatrixEvent,
   MatrixEventEvent,
   MsgType,
@@ -53,8 +54,15 @@ import {
   resolveNotificationPreviewText,
 } from '$utils/notificationStyle';
 import { isMobileOrTablet } from '$utils/platform';
+import { createLogger } from '$utils/debug';
 import { createDebugLogger } from '$utils/debugLogger';
 import { showToast } from '$state/toast';
+import { arePushRulesReady, evaluateNotification } from '$utils/localNotifications';
+import { getLocalNotificationCache } from '$client/localNotificationCache';
+import {
+  backfillLocalNotifications,
+  scheduleLiveTimelineScan,
+} from '$utils/localNotificationBackfill';
 import {
   nativeNotificationRepliesAtom,
   nativeNotificationReplyInFlightAtom,
@@ -669,6 +677,212 @@ export function HandleDecryptPushEvent() {
 
     navigator.serviceWorker.addEventListener('message', handleMessage);
     return () => navigator.serviceWorker.removeEventListener('message', handleMessage);
+  }, [mx]);
+
+  return null;
+}
+
+const recorderLogger = createLogger('NotificationRecorder');
+const RECORDED_CAP = 300;
+const HEARTBEAT_INTERVAL_MS = 60_000;
+const DECRYPT_TIMEOUT_MS = 30_000;
+
+export function NotificationRecorder() {
+  const mx = useMatrixClient();
+  const mDirects = useAtomValue(mDirectAtom);
+  const mDirectsRef = useRef(mDirects);
+  mDirectsRef.current = mDirects;
+
+  const recordedRef = useRef<Set<string>>(new Set());
+  const decryptingRef = useRef<Set<string>>(new Set());
+  const hasBackfilledRef = useRef(false);
+  const decryptTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const backfillControllerRef = useRef<AbortController | undefined>(undefined);
+  const missedBeforePushRulesRef = useRef(false);
+  const decryptListenersRef = useRef<Map<MatrixEvent, () => void>>(new Map());
+  const hasScannedRef = useRef(false);
+  const [storeContent] = useSetting(settingsAtom, 'showMessageContentInNotifications');
+  const [storeEncryptedContent] = useSetting(
+    settingsAtom,
+    'showMessageContentInEncryptedNotifications'
+  );
+  const storeContentRef = useRef(storeContent);
+  storeContentRef.current = storeContent;
+  const storeEncryptedContentRef = useRef(storeContent && storeEncryptedContent);
+  storeEncryptedContentRef.current = storeContent && storeEncryptedContent;
+  const prevMxRef = useRef(mx);
+  if (prevMxRef.current !== mx) {
+    prevMxRef.current = mx;
+    recordedRef.current = new Set();
+    decryptingRef.current = new Set();
+    hasBackfilledRef.current = false;
+    missedBeforePushRulesRef.current = false;
+    hasScannedRef.current = false;
+  }
+
+  useEffect(() => {
+    const userId = mx.getSafeUserId();
+    const cache = getLocalNotificationCache(userId);
+
+    const markRecorded = (eventId: string) => {
+      recordedRef.current.add(eventId);
+      if (recordedRef.current.size > RECORDED_CAP) {
+        const oldest = recordedRef.current.values().next().value;
+        if (oldest !== undefined) recordedRef.current.delete(oldest);
+      }
+    };
+
+    const handler: RoomEventHandlerMap[RoomEvent.Timeline] = (
+      mEvent,
+      room,
+      toStartOfTimeline,
+      removed
+    ) => {
+      if (toStartOfTimeline || removed) return;
+      if (!room) return;
+      const eventId = mEvent.getId();
+      if (!eventId) return;
+
+      if (recordedRef.current.has(eventId)) return;
+
+      // Leave unrecorded so the rescan picks it up once push rules arrive.
+      if (!arePushRulesReady(mx)) {
+        missedBeforePushRulesRef.current = true;
+        return;
+      }
+
+      if (mEvent.getType() === 'm.room.encrypted' && mEvent.isEncrypted()) {
+        if (decryptingRef.current.has(eventId)) return;
+        decryptingRef.current.add(eventId);
+        markRecorded(eventId);
+
+        const stored = evaluateNotification(
+          mx,
+          room,
+          mEvent,
+          mDirectsRef.current,
+          getNotificationType(mx, room.roomId),
+          { storeContent: storeEncryptedContentRef.current }
+        );
+        if (stored) {
+          cache.merge(stored);
+        }
+
+        // Not `once`: Decrypted also fires for a decryption FAILURE, whose clear
+        // event is an m.bad.encrypted placeholder. Staying subscribed lets the
+        // SDK's later retry replace it.
+        const handleDecrypted = () => {
+          if (mEvent.isDecryptionFailure()) return;
+          decryptingRef.current.delete(eventId);
+          const upgraded = evaluateNotification(
+            mx,
+            room,
+            mEvent,
+            mDirectsRef.current,
+            getNotificationType(mx, room.roomId),
+            { storeContent: storeEncryptedContentRef.current }
+          );
+          if (upgraded) cache.merge(upgraded);
+          mEvent.off(MatrixEventEvent.Decrypted, handleDecrypted);
+          decryptListenersRef.current.delete(mEvent);
+        };
+        mEvent.on(MatrixEventEvent.Decrypted, handleDecrypted);
+        decryptListenersRef.current.set(mEvent, handleDecrypted);
+
+        // Stop waiting, but keep the placeholder: a megolm key can still arrive
+        // later, and deleting the entry loses the notification for good.
+        const timeoutId = setTimeout(() => {
+          decryptTimeoutsRef.current.delete(timeoutId);
+          decryptingRef.current.delete(eventId);
+        }, DECRYPT_TIMEOUT_MS);
+        decryptTimeoutsRef.current.add(timeoutId);
+        return;
+      }
+
+      const stored = evaluateNotification(
+        mx,
+        room,
+        mEvent,
+        mDirectsRef.current,
+        getNotificationType(mx, room.roomId),
+        { storeContent: storeContentRef.current }
+      );
+      markRecorded(eventId);
+      if (stored) cache.merge(stored);
+    };
+
+    mx.on(RoomEvent.Timeline, handler);
+
+    // Only advance the watermark while syncing, so an outage isn't treated as "nothing missed".
+    const beat = () => {
+      if (mx.getSyncState() === SyncState.Syncing) cache.updateLastSeenTs(Date.now());
+    };
+    const heartbeatInterval = setInterval(beat, HEARTBEAT_INTERVAL_MS);
+
+    // SlidingSyncSdk assigns client.pushRules without emitting AccountData, so
+    // this cannot wait on that event. Runs every start because shouldBackfill
+    // declines whenever the heartbeat kept the gap under its threshold.
+    const scanOnce = () => {
+      if (hasScannedRef.current || !arePushRulesReady(mx)) return;
+      hasScannedRef.current = true;
+      missedBeforePushRulesRef.current = false;
+      void scheduleLiveTimelineScan(mx, userId, mDirectsRef.current, {
+        storeContent: storeContentRef.current,
+        storeEncryptedContent: storeEncryptedContentRef.current,
+      }).catch((err: unknown) => {
+        recorderLogger.warn('live timeline scan failed', err);
+      });
+    };
+
+    const onSync = (state: SyncState) => {
+      if (
+        state !== SyncState.Prepared &&
+        state !== SyncState.Syncing &&
+        state !== SyncState.Catchup
+      ) {
+        return;
+      }
+      scanOnce();
+
+      if (hasBackfilledRef.current) return;
+      hasBackfilledRef.current = true;
+      const controller = new AbortController();
+      backfillControllerRef.current = controller;
+      void backfillLocalNotifications(mx, userId, Date.now(), controller.signal).catch(
+        (err: unknown) => {
+          recorderLogger.warn('backfill failed', err);
+        }
+      );
+    };
+    mx.on(ClientEvent.Sync, onSync);
+    const currentState = mx.getSyncState();
+    if (currentState) onSync(currentState);
+
+    // Covers a later push-rule change.
+    const onPushRules = (event: MatrixEvent) => {
+      if (event.getType() !== (EventType.PushRules as string)) return;
+      scanOnce();
+    };
+    mx.on(ClientEvent.AccountData, onPushRules);
+
+    const decryptTimeouts = decryptTimeoutsRef.current;
+    const decryptListeners = decryptListenersRef.current;
+    return () => {
+      mx.off(RoomEvent.Timeline, handler);
+      mx.off(ClientEvent.Sync, onSync);
+      mx.off(ClientEvent.AccountData, onPushRules);
+      clearInterval(heartbeatInterval);
+      for (const id of decryptTimeouts) clearTimeout(id);
+      decryptTimeouts.clear();
+      // These hold mx, room and the previous account's cache through their closure.
+      for (const [event, listener] of decryptListeners) {
+        event.off(MatrixEventEvent.Decrypted, listener);
+      }
+      decryptListeners.clear();
+      backfillControllerRef.current?.abort();
+      backfillControllerRef.current = undefined;
+      beat();
+    };
   }, [mx]);
 
   return null;

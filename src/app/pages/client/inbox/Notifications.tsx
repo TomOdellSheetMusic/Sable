@@ -1,5 +1,5 @@
 import type { MouseEventHandler } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar, Box, Chip, Header, IconButton, Scroll, Text, config, toRem } from 'folds';
 import {
   ArrowLeft,
@@ -11,10 +11,9 @@ import {
   sizedIcon,
 } from '$components/icons/phosphor';
 import { useSearchParams } from 'react-router-dom';
-import type { INotification, INotificationsResponse, Room } from '$types/matrix-sdk';
-import { EventType, JoinRule, MatrixEvent, Method } from '$types/matrix-sdk';
+import type { Room } from '$types/matrix-sdk';
+import { JoinRule, MatrixEvent } from '$types/matrix-sdk';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useAtomValue } from 'jotai';
 import { Page, PageContent, PageContentCenter, PageHeader } from '$components/page';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import type { InboxNotificationsPathSearchParams } from '$pages/paths';
@@ -23,7 +22,9 @@ import { SequenceCard } from '$components/sequence-card';
 import { RoomAvatar, RoomIcon } from '$components/room-avatar';
 import { getRoomAvatarUrl } from '$utils/room/display';
 import { ScrollTopContainer } from '$components/scroll-top-container';
-import { useInterval } from '$hooks/useInterval';
+import { useLocalNotificationTimeline } from '$hooks/useLocalNotificationTimeline';
+import { isStoredNotificationRead, type StoredNotification } from '$utils/localNotifications';
+import { getLocalNotificationCache } from '$client/localNotificationCache';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
 import { useRoomNavigate } from '$hooks/useRoomNavigate';
@@ -37,124 +38,22 @@ import { useSettingsLinkBaseUrl } from '$features/settings/useSettingsLinkBaseUr
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
 import { BackRouteHandler } from '$components/BackRouteHandler';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
-import { allRoomsAtom } from '$state/room-list/roomList';
-
-type RoomNotificationsGroup = {
-  roomId: string;
-  notifications: INotification[];
-};
-type NotificationTimeline = {
-  nextToken?: string;
-  groups: RoomNotificationsGroup[];
-};
-type LoadTimeline = (from?: string) => Promise<void>;
-type SilentReloadTimeline = () => Promise<void>;
-
-const groupNotifications = (
-  notifications: INotification[],
-  allowRooms: Set<string>
-): RoomNotificationsGroup[] => {
-  const groups: RoomNotificationsGroup[] = [];
-  notifications.forEach((notification) => {
-    if (notification.event.type === (EventType.RoomMember as string)) return;
-    if (!allowRooms.has(notification.room_id)) return;
-
-    const groupIndex = groups.length - 1;
-    const lastAddedGroup: RoomNotificationsGroup | undefined = groups[groupIndex];
-    if (notification.room_id === lastAddedGroup?.roomId) {
-      lastAddedGroup.notifications.push(notification);
-      return;
-    }
-    groups.push({
-      roomId: notification.room_id,
-      notifications: [notification],
-    });
-  });
-  return groups;
-};
-
-const useNotificationTimeline = (
-  paginationLimit: number,
-  onlyHighlight?: boolean
-): [NotificationTimeline, LoadTimeline, SilentReloadTimeline] => {
-  const mx = useMatrixClient();
-  const allRooms = useAtomValue(allRoomsAtom);
-  const allJoinedRooms = useMemo(() => new Set(allRooms), [allRooms]);
-
-  const [notificationTimeline, setNotificationTimeline] = useState<NotificationTimeline>({
-    groups: [],
-  });
-
-  const fetchNotifications = useCallback(
-    (from?: string, limit?: number, only?: 'highlight') => {
-      const queryParams = { from, limit, only };
-      return mx.http.authedRequest<INotificationsResponse>(
-        Method.Get,
-        '/notifications',
-        queryParams
-      );
-    },
-    [mx]
-  );
-
-  const loadTimeline: LoadTimeline = useCallback(
-    async (from) => {
-      if (!from) {
-        setNotificationTimeline({ groups: [] });
-      }
-      const data = await fetchNotifications(
-        from,
-        paginationLimit,
-        onlyHighlight ? 'highlight' : undefined
-      );
-      const groups = groupNotifications(data.notifications, allJoinedRooms);
-
-      setNotificationTimeline((currentTimeline) => {
-        if (currentTimeline.nextToken === from) {
-          return {
-            nextToken: data.next_token,
-            groups: from ? currentTimeline.groups.concat(groups) : groups,
-          };
-        }
-        return currentTimeline;
-      });
-    },
-    [paginationLimit, onlyHighlight, fetchNotifications, allJoinedRooms]
-  );
-
-  /**
-   * Reload timeline silently i.e without setting to default
-   * before fetching notifications from start
-   */
-  const silentReloadTimeline: SilentReloadTimeline = useCallback(async () => {
-    const data = await fetchNotifications(
-      undefined,
-      paginationLimit,
-      onlyHighlight ? 'highlight' : undefined
-    );
-    const groups = groupNotifications(data.notifications, allJoinedRooms);
-    setNotificationTimeline({
-      nextToken: data.next_token,
-      groups,
-    });
-  }, [paginationLimit, onlyHighlight, fetchNotifications, allJoinedRooms]);
-
-  return [notificationTimeline, loadTimeline, silentReloadTimeline];
-};
 
 type RoomNotificationsGroupProps = {
   room: Room;
   appBaseUrl: string;
-  notifications: INotification[];
+  notifications: StoredNotification[];
   hideReads: boolean;
   onOpen: (roomId: string, eventId: string) => void;
   hour24Clock: boolean;
   dateFormatString: string;
+  expanded: boolean;
+  onToggleExpanded: (roomId: string, expanded: boolean) => void;
 };
 
 type NotificationItemProps = {
   room: Room;
-  notification: INotification;
+  notification: StoredNotification;
   renderContent: ReturnType<typeof useRoomMessagePreviewRenderer>;
   onOpen: (roomId: string, eventId: string) => void;
   hour24Clock: boolean;
@@ -169,11 +68,23 @@ function NotificationItem({
   hour24Clock,
   dateFormatString,
 }: NotificationItemProps) {
-  const event = useMemo(() => new MatrixEvent(notification.event), [notification.event]);
+  const mx = useMatrixClient();
+  const liveEvent = useMemo(
+    () => room.findEventById(notification.event.event_id),
+    [room, notification.event.event_id]
+  );
+  const event = useMemo(
+    () => liveEvent ?? new MatrixEvent(notification.event),
+    [liveEvent, notification.event]
+  );
   const handleOpen: MouseEventHandler<HTMLButtonElement> = (evt) => {
     evt.stopPropagation();
     onOpen(room.roomId, notification.event.event_id);
   };
+  const handleDismiss = () => {
+    getLocalNotificationCache(mx.getSafeUserId()).dismiss(notification.event.event_id);
+  };
+  const isRead = isStoredNotificationRead(room, mx.getSafeUserId(), notification);
 
   return (
     <SequenceCard
@@ -186,9 +97,26 @@ function NotificationItem({
         event={event}
         renderContent={renderContent}
         actions={
-          <Chip onClick={handleOpen} variant="Secondary" radii="400">
-            <Text size="T200">Open</Text>
-          </Chip>
+          <>
+            {!isRead && (
+              <Box
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: 'currentColor',
+                  flexShrink: 0,
+                }}
+                aria-label="Unread"
+              />
+            )}
+            <Chip onClick={handleOpen} variant="Secondary" radii="400">
+              <Text size="T200">Open</Text>
+            </Chip>
+            <Chip onClick={handleDismiss} variant="Surface" radii="400">
+              <Text size="T200">Done</Text>
+            </Chip>
+          </>
         }
         onOpen={handleOpen}
         hour24Clock={hour24Clock}
@@ -206,6 +134,8 @@ function RoomNotificationsGroupComp({
   onOpen,
   hour24Clock,
   dateFormatString,
+  expanded,
+  onToggleExpanded,
 }: Readonly<RoomNotificationsGroupProps>) {
   const mx = useMatrixClient();
   const useAuthentication = useMediaAuthentication();
@@ -214,6 +144,12 @@ function RoomNotificationsGroupComp({
   const handleMarkAsRead = () => {
     markAsRead(mx, room.roomId, hideReads);
   };
+  const handleDismissAll = () => {
+    getLocalNotificationCache(mx.getSafeUserId()).dismissAllInRoom(room.roomId);
+  };
+  const MAX_VISIBLE = 5;
+  const visible = expanded ? notifications : notifications.slice(0, MAX_VISIBLE);
+  const hiddenCount = notifications.length - visible.length;
 
   return (
     <Box direction="Column" gap="200">
@@ -238,7 +174,17 @@ function RoomNotificationsGroupComp({
             {room.name}
           </Text>
         </Box>
-        <Box shrink="No">
+        <Box shrink="No" gap="100" alignItems="Center">
+          {notifications.length > 0 && (
+            <Chip
+              variant="Surface"
+              radii="Pill"
+              onClick={handleDismissAll}
+              before={sizedIcon(Check, '100')}
+            >
+              <Text size="T200">Dismiss all</Text>
+            </Chip>
+          )}
           {unread && (
             <Chip
               variant="Primary"
@@ -252,7 +198,7 @@ function RoomNotificationsGroupComp({
         </Box>
       </Header>
       <Box direction="Column" gap="100">
-        {notifications.map((notification) => (
+        {visible.map((notification) => (
           <NotificationItem
             key={notification.event.event_id}
             room={room}
@@ -263,6 +209,11 @@ function RoomNotificationsGroupComp({
             dateFormatString={dateFormatString}
           />
         ))}
+        {hiddenCount > 0 && (
+          <Chip variant="Surface" radii="Pill" onClick={() => onToggleExpanded(room.roomId, true)}>
+            <Text size="T200">{hiddenCount} more</Text>
+          </Chip>
+        )}
       </Box>
     </Box>
   );
@@ -278,8 +229,6 @@ const useNotificationsSearchParams = (
     [searchParams]
   );
 
-const FAST_REFRESH_MS = 2500;
-
 export function Notifications() {
   const mx = useMatrixClient();
   const [hideReads] = useSetting(settingsAtom, 'hideReads');
@@ -294,22 +243,24 @@ export function Notifications() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollTopAnchorRef = useRef<HTMLDivElement>(null);
 
-  const onlyHighlight = notificationsSearchParams.only === 'highlight';
-  const setOnlyHighlighted = (highlight: boolean) => {
-    if (highlight) {
-      setSearchParams(
-        new URLSearchParams({
-          only: 'highlight',
-        })
-      );
-      return;
+  const filterMode = notificationsSearchParams.only === 'all' ? 'all' : 'mentions';
+  const setFilterMode = (mode: 'mentions' | 'all') => {
+    if (mode === 'all') {
+      setSearchParams(new URLSearchParams({ only: 'all' }));
+    } else {
+      setSearchParams();
     }
-    setSearchParams();
+  };
+  const [includeDone, setIncludeDone] = useState(false);
+  const [expandedRooms, setExpandedRooms] = useState<Record<string, boolean>>({});
+  const handleToggleExpanded = (roomId: string, expanded: boolean) => {
+    setExpandedRooms((prev) => ({ ...prev, [roomId]: expanded }));
   };
 
-  const [notificationTimeline, loadTimelineRaw, silentReloadTimeline] = useNotificationTimeline(
+  const [notificationTimeline, loadTimelineRaw] = useLocalNotificationTimeline(
     24,
-    onlyHighlight
+    filterMode,
+    includeDone
   );
   const [timelineState, loadTimeline] = useAsyncCallback(loadTimelineRaw);
 
@@ -320,13 +271,6 @@ export function Notifications() {
     overscan: 4,
   });
   const vItems = virtualizer.getVirtualItems();
-
-  useInterval(
-    useCallback(() => {
-      silentReloadTimeline();
-    }, [silentReloadTimeline]),
-    FAST_REFRESH_MS
-  );
 
   useEffect(() => {
     loadTimeline();
@@ -375,22 +319,31 @@ export function Notifications() {
                   <Text size="L400">Filter</Text>
                   <Box gap="200">
                     <Chip
-                      onClick={() => setOnlyHighlighted(false)}
-                      variant={onlyHighlight ? 'Surface' : 'Success'}
-                      aria-pressed={!onlyHighlight}
-                      before={!onlyHighlight && sizedIcon(Check, '100')}
+                      onClick={() => setFilterMode('mentions')}
+                      variant={filterMode === 'mentions' ? 'Success' : 'Surface'}
+                      aria-pressed={filterMode === 'mentions'}
+                      before={filterMode === 'mentions' && sizedIcon(Check, '100')}
                       outlined
                     >
-                      <Text size="T200">All Notifications</Text>
+                      <Text size="T200">Mentions &amp; DMs</Text>
                     </Chip>
                     <Chip
-                      onClick={() => setOnlyHighlighted(true)}
-                      variant={onlyHighlight ? 'Success' : 'Surface'}
-                      aria-pressed={onlyHighlight}
-                      before={onlyHighlight && sizedIcon(Check, '100')}
+                      onClick={() => setFilterMode('all')}
+                      variant={filterMode === 'all' ? 'Success' : 'Surface'}
+                      aria-pressed={filterMode === 'all'}
+                      before={filterMode === 'all' && sizedIcon(Check, '100')}
                       outlined
                     >
-                      <Text size="T200">Highlighted</Text>
+                      <Text size="T200">All</Text>
+                    </Chip>
+                    <Chip
+                      onClick={() => setIncludeDone((v) => !v)}
+                      variant={includeDone ? 'Success' : 'Surface'}
+                      aria-pressed={includeDone}
+                      before={includeDone && sizedIcon(Check, '100')}
+                      outlined
+                    >
+                      <Text size="T200">Include done</Text>
                     </Chip>
                   </Box>
                 </Box>
@@ -433,6 +386,8 @@ export function Notifications() {
                           onOpen={navigateRoom}
                           hour24Clock={hour24Clock}
                           dateFormatString={dateFormatString}
+                          expanded={expandedRooms[group.roomId] ?? false}
+                          onToggleExpanded={handleToggleExpanded}
                         />
                       </VirtualTile>
                     );

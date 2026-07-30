@@ -120,6 +120,11 @@ export interface SaveMediaToPhotosParams {
   [key: string]: unknown;
 }
 
+export interface SetImmersiveModeParams {
+  enabled: boolean;
+  [key: string]: unknown;
+}
+
 export interface SetMediaEncryptionParams {
   url: string;
   key: string;

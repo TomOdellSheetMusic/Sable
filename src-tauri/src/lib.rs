@@ -419,6 +419,8 @@ pub fn run() {
             #[cfg(target_os = "android")]
             mobile::set_navigation_bar_color,
             #[cfg(target_os = "android")]
+            mobile::set_immersive_mode,
+            #[cfg(target_os = "android")]
             mobile::start_call_foreground_service,
             #[cfg(target_os = "android")]
             mobile::stop_call_foreground_service,

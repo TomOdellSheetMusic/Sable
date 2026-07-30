@@ -46,7 +46,7 @@ const imageContent = (
   <ImageContent
     url="https://example.com/image.png"
     renderImage={() => <img alt="preview" />}
-    renderViewer={() => <div>viewer</div>}
+    renderViewer={() => <button type="button">viewer</button>}
   />
 );
 
@@ -91,6 +91,41 @@ describe('ImageContent', () => {
 
     await waitFor(() => expect(screen.getByText('viewer')).toBeInTheDocument());
     expect(screen.getByAltText('preview').closest('[data-gestures="ignore"]')).not.toBeNull();
+  });
+
+  it('falls back to its own viewer when the room gallery declines to open', async () => {
+    const onOpenViewer = vi.fn<() => boolean>(() => false);
+    render(
+      <ImageContent
+        url="https://example.com/image.png"
+        renderImage={() => <img alt="preview" />}
+        renderViewer={() => <button type="button">viewer</button>}
+        onOpenViewer={onOpenViewer}
+      />
+    );
+
+    // A plain click, so this case does not arm the shared synthetic-click blocker.
+    fireEvent.click(screen.getByRole('button', { name: 'View' }));
+
+    await waitFor(() => expect(screen.getByText('viewer')).toBeInTheDocument());
+    expect(onOpenViewer).toHaveBeenCalled();
+  });
+
+  it('leaves the local viewer closed when the room gallery takes over', async () => {
+    const onOpenViewer = vi.fn<() => boolean>(() => true);
+    render(
+      <ImageContent
+        url="https://example.com/image.png"
+        renderImage={() => <img alt="preview" />}
+        renderViewer={() => <button type="button">viewer</button>}
+        onOpenViewer={onOpenViewer}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'View' }));
+
+    await waitFor(() => expect(onOpenViewer).toHaveBeenCalled());
+    expect(screen.queryByText('viewer')).not.toBeInTheDocument();
   });
 
   it('does not mount hover controls for touch pointer entry', () => {
@@ -145,8 +180,15 @@ describe('ImageContent', () => {
       const initialSrc = srcs[srcs.length - 1];
       expect(initialSrc).toBe(SABLE_MEDIA_URL);
 
+      // The mobile fullscreen viewer traps focus and blocks outside clicks, so
+      // close it before retrying.
+      fireEvent.keyDown(document.body, { key: 'Escape' });
       fireEvent.error(img);
-      fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
+      // Press before clicking: the tap that opened the viewer armed the synthetic
+      // click blocker, and a real press is what disarms it.
+      const retry = await screen.findByRole('button', { name: 'Retry' });
+      fireEvent.pointerDown(retry, { pointerId: 2, pointerType: 'mouse', isPrimary: true });
+      fireEvent.click(retry);
 
       await waitFor(() => {
         const retriedSrc = srcs[srcs.length - 1] ?? '';

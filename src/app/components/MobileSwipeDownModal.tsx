@@ -28,6 +28,7 @@ interface MobileSwipeDownModalProps {
   sheetClassName?: string;
   sheetStyle?: CSSProperties;
   keyboardAware?: boolean;
+  zIndex?: number;
 }
 
 type FocusTrapOptions = ComponentProps<typeof FocusTrap>['focusTrapOptions'];
@@ -102,6 +103,7 @@ export function MobileSwipeDownModal({
   sheetClassName,
   sheetStyle,
   keyboardAware = false,
+  zIndex,
 }: MobileSwipeDownModalProps) {
   const sheetRef = useRef<HTMLDivElement>(null);
   const backdropTouchRef = useRef(false);
@@ -359,7 +361,10 @@ export function MobileSwipeDownModal({
         portalRef ? css.MessageMobileOptionsWrappedContained : ''
       }`}
       data-gestures="ignore"
-      style={closing ? { opacity: 0, transition: 'opacity 100ms ease-out' } : undefined}
+      style={{
+        ...(closing ? { opacity: 0, transition: 'opacity 100ms ease-out' } : undefined),
+        zIndex,
+      }}
       onClick={handleBackdropClick}
       // Touch events deliberately propagate: the drag binds them on `document`, and
       // stopping them here would starve it. `data-gestures="ignore"` is what keeps the

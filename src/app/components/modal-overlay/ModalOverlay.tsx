@@ -27,6 +27,8 @@ type ModalOverlayProps = {
   contentRef?: MutableRefObject<HTMLDivElement | null>;
   /** Set false for flows that Escape must not abort, such as device verification. */
   escapeDeactivates?: FocusTrapOptions['escapeDeactivates'];
+  /** Fills the mobile fullscreen wrapper, for content that does not paint its own. */
+  background?: string;
   children: ReactNode;
 };
 
@@ -38,6 +40,7 @@ export function ModalOverlay({
   size,
   contentRef,
   escapeDeactivates = stopPropagation,
+  background,
   children,
 }: ModalOverlayProps) {
   // Null outside a provider, where desktop is the safe assumption.
@@ -57,6 +60,7 @@ export function ModalOverlay({
         <FocusTrap
           focusTrapOptions={{
             initialFocus: false,
+            fallbackFocus: () => contentRef?.current ?? document.body,
             escapeDeactivates,
             onDeactivate: requestClose,
           }}
@@ -64,7 +68,13 @@ export function ModalOverlay({
           <div
             ref={contentRef}
             tabIndex={-1}
-            style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              background,
+            }}
           >
             {children}
           </div>

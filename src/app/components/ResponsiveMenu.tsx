@@ -1,4 +1,5 @@
 import type { ComponentProps, CSSProperties, ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import type { RectCords } from 'folds';
 import { Box, Overlay, OverlayBackdrop, OverlayCenter, PopOut } from 'folds';
 import FocusTrap from 'focus-trap-react';
@@ -28,8 +29,10 @@ type ResponsiveMenuProps = {
   arrowNavigation?: 'vertical' | 'both';
   /** How the menu shows on mobile: a bottom sheet, or a centred dialog for
    *  option pickers, which a sheet makes look like an action menu. */
-  mobile?: 'sheet' | 'dialog';
+  mobile?: 'sheet' | 'dialog' | 'inline-dialog';
   surfaceColor?: string;
+  /** Raises a mobile sheet above a parent fullscreen overlay. */
+  mobileZIndex?: number;
 };
 
 function MenuDialog({
@@ -57,6 +60,68 @@ function MenuDialog({
   );
 }
 
+function InlineMenuDialog({
+  anchor,
+  requestClose,
+  focusTrapOptions,
+  zIndex,
+  children,
+}: {
+  anchor: RectCords;
+  requestClose: () => void;
+  focusTrapOptions: FocusTrapOptions;
+  zIndex: number;
+  children: ReactNode;
+}) {
+  // Android back closes the menu instead of navigating away.
+  useDismissOnBack(requestClose);
+
+  const [viewport, setViewport] = useState(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
+  useEffect(() => {
+    const handleResize = () =>
+      setViewport({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const maxHeight = Math.round(viewport.height * 0.75);
+
+  return (
+    <FocusTrap focusTrapOptions={focusTrapOptions}>
+      <Box
+        style={{ position: 'fixed', inset: 0, zIndex, background: 'transparent' }}
+        onClick={requestClose}
+      >
+        <Box
+          direction="Column"
+          role="dialog"
+          aria-modal="true"
+          style={{
+            width: 'fit-content',
+            maxWidth: `${viewport.width - 16}px`,
+            maxHeight: `${maxHeight}px`,
+            overflow: 'auto',
+            borderRadius: '20px',
+            position: 'absolute',
+            // Keep the menu on screen when the trigger sits low in the viewport.
+            top: Math.min(
+              Math.max(8, anchor.y + anchor.height + 8),
+              Math.max(8, viewport.height - maxHeight - 8)
+            ),
+            right: Math.max(8, viewport.width - anchor.x - anchor.width),
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {children}
+        </Box>
+      </Box>
+    </FocusTrap>
+  );
+}
+
 /**
  * A menu that hangs off its trigger on desktop and rises as a bottom sheet on
  * mobile, where a popout anchored to a tiny target is hard to hit and easy to
@@ -75,6 +140,7 @@ export function ResponsiveMenu({
   arrowNavigation = 'vertical',
   mobile = 'sheet',
   surfaceColor,
+  mobileZIndex,
 }: ResponsiveMenuProps) {
   const isMobile = useCompactLayout();
 
@@ -96,6 +162,24 @@ export function ResponsiveMenu({
   };
 
   if (isMobile) {
+    if (mobile === 'inline-dialog') {
+      return (
+        <>
+          {children}
+          {anchor && (
+            <InlineMenuDialog
+              anchor={anchor}
+              requestClose={requestClose}
+              focusTrapOptions={focusTrapOptions}
+              zIndex={mobileZIndex ?? 2_147_483_647}
+            >
+              {menu}
+            </InlineMenuDialog>
+          )}
+        </>
+      );
+    }
+
     const sheetStyle: CSSProperties | undefined = surfaceColor
       ? { backgroundColor: surfaceColor }
       : undefined;
@@ -109,7 +193,11 @@ export function ResponsiveMenu({
           </MenuDialog>
         )}
         {anchor && mobile === 'sheet' && (
-          <MobileSwipeDownModal requestClose={requestClose} sheetStyle={sheetStyle}>
+          <MobileSwipeDownModal
+            requestClose={requestClose}
+            sheetStyle={sheetStyle}
+            zIndex={mobileZIndex}
+          >
             {() => (
               <MobileSheetFocusTrap
                 focusTrapOptions={{

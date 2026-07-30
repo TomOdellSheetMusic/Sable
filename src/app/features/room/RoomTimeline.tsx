@@ -13,7 +13,7 @@ import {
 import type { Editor } from 'slate';
 import { useAtomValue, useSetAtom, useStore } from 'jotai';
 import type { Room, MatrixEvent, EventTimelineSet } from '$types/matrix-sdk';
-import { Direction, EventTimeline, EventType, RoomEvent } from '$types/matrix-sdk';
+import { Direction, EventTimeline, EventType, MsgType, RoomEvent } from '$types/matrix-sdk';
 import classNames from 'classnames';
 import type { VListHandle } from 'virtua';
 import { VList } from 'virtua';
@@ -24,6 +24,7 @@ import { MessageBase, CompactPlaceholder, DefaultPlaceholder } from '$components
 import { RoomIntro } from '$components/room-intro';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useMatrixEvent } from '$hooks/useMatrixEvent';
+import { ScreenSize, useScreenSizeOptionally } from '$hooks/useScreenSize';
 import { useAlive } from '$hooks/useAlive';
 import { useMessageEdit } from '$hooks/useMessageEdit';
 import { useDocumentFocusChange } from '$hooks/useDocumentFocusChange';
@@ -70,6 +71,9 @@ import {
   type ProcessedEvent,
 } from '$hooks/timeline/useProcessedTimeline';
 import { useTimelineEventRenderer } from '$hooks/timeline/useTimelineEventRenderer';
+import { RoomMediaViewer } from '$components/image-viewer/RoomMediaViewer';
+import type { RoomMediaItem } from '$components/image-viewer/RoomMediaViewer';
+import type { IImageContent } from '$types/matrix/common';
 import { useTimelineRendererContext } from '$hooks/timeline/useTimelineRendererContext';
 import { TimelineScrollingProvider, useScrollActivity } from '$hooks/useTimelineScrollActivity';
 import * as css from './RoomTimeline.css';
@@ -312,6 +316,27 @@ export type RoomTimelineProps = {
   onEditId?: (editId?: string) => void;
 };
 
+const getRoomMediaItem = (mEvent: MatrixEvent): RoomMediaItem | undefined => {
+  if (mEvent.isRedacted()) return undefined;
+
+  const content = mEvent.getContent() as IImageContent;
+  const isImage = content.msgtype === MsgType.Image || mEvent.getType() === 'm.sticker';
+  const url = content.file?.url ?? content.url;
+  const eventId = mEvent.getId();
+
+  if (!isImage || typeof url !== 'string' || !eventId) return undefined;
+
+  return {
+    eventId,
+    body: content.body ?? content.filename ?? 'Image',
+    filename: content.filename,
+    url,
+    info: content.info,
+    mimeType: content.info?.mimetype,
+    encInfo: content.file,
+  };
+};
+
 export function RoomTimeline({
   room,
   eventId,
@@ -322,6 +347,7 @@ export function RoomTimeline({
   onEditId: propsOnEditId,
 }: Readonly<RoomTimelineProps>) {
   const mx = useMatrixClient();
+  const isMobile = useScreenSizeOptionally() === ScreenSize.Mobile;
   const alive = useAlive();
   const roomSyncLoading = useSlidingSyncRoomLoading(room.roomId);
 
@@ -936,6 +962,30 @@ export function RoomTimeline({
   // the row memo has to compare them itself to notice a power-level change.
   const rowPermissions = { canRedact, canDeleteOwn, canSendReaction, canPinEvent };
 
+  const [selectedMediaEventId, setSelectedMediaEventId] = useState<string>();
+  const [roomMedia, setRoomMedia] = useState<RoomMediaItem[]>([]);
+  // Returns false on desktop and for anything the gallery cannot show, so the
+  // attachment falls back to its own viewer instead of doing nothing. The gallery
+  // is collected on open: events are appended into the linked timelines in place,
+  // so there is no identity change a memo could key off.
+  const openRoomMedia = useCallback(
+    (mEvent: MatrixEvent) => {
+      const mediaEventId = mEvent.getId();
+      if (!isMobile || !mediaEventId || !getRoomMediaItem(mEvent)) return false;
+      setRoomMedia(
+        timelineSyncRef.current.timeline.linkedTimelines.flatMap((timeline) =>
+          timeline.getEvents().flatMap((timelineEvent) => {
+            const item = getRoomMediaItem(timelineEvent);
+            return item ? [item] : [];
+          })
+        )
+      );
+      setSelectedMediaEventId(mediaEventId);
+      return true;
+    },
+    [isMobile]
+  );
+
   const renderMatrixEvent = useTimelineEventRenderer({
     room,
     mx,
@@ -956,6 +1006,7 @@ export function RoomTimeline({
       onDeleteFailedSend: actions.handleDeleteFailedSend,
       setOpenThread: actions.setOpenThread,
       handleOpenReply: actions.handleOpenReply,
+      onOpenMedia: openRoomMedia,
     },
     utils: { htmlReactParserOptions, linkifyOpts, getMemberPowerTag, parseMemberEvent },
   });
@@ -1302,6 +1353,14 @@ export function RoomTimeline({
           </VList>
         </TimelineScrollingProvider>
       </div>
+      {selectedMediaEventId && (
+        <RoomMediaViewer
+          items={roomMedia}
+          selectedEventId={selectedMediaEventId}
+          selectEvent={setSelectedMediaEventId}
+          requestClose={() => setSelectedMediaEventId(undefined)}
+        />
+      )}
 
       {showBackPaginationSpinner && (
         <TimelineFloat position="Top" style={timelineTopFloatLift}>

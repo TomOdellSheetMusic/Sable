@@ -74,6 +74,10 @@ export async function saveMediaToPhotos(params: types.SaveMediaToPhotosParams): 
   return invoke('save_media_to_photos', params);
 }
 
+export async function setImmersiveMode(params: types.SetImmersiveModeParams): Promise<void> {
+  return invoke('set_immersive_mode', params);
+}
+
 export async function setMediaEncryption(params: types.SetMediaEncryptionParams): Promise<void> {
   return invoke('set_media_encryption', params);
 }

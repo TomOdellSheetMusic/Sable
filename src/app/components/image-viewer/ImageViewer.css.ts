@@ -22,6 +22,18 @@ export const ImageViewerHeader = style([
     minHeight: config.space.S400,
     paddingTop: config.space.S100,
     paddingBottom: config.space.S100,
+    '@media': {
+      '(max-width: 600px)': {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 1,
+        borderBottomWidth: 0,
+        background: 'linear-gradient(#000a, transparent)',
+        color: '#fff',
+      },
+    },
   },
 ]);
 
@@ -31,6 +43,12 @@ export const ImageViewerContent = style([
     backgroundColor: color.Background.Container,
     color: color.Background.OnContainer,
     overflow: 'hidden',
+    '@media': {
+      '(max-width: 600px)': {
+        backgroundColor: '#000',
+        color: '#fff',
+      },
+    },
   },
 ]);
 
@@ -65,4 +83,23 @@ export const ImageViewerImg = style([
 export const ImageViewerImgPixelated = style({
   imageRendering: 'pixelated',
   willChange: 'auto',
+});
+
+const mobileGalleryControl = {
+  position: 'absolute' as const,
+  top: '50%',
+  zIndex: 1,
+  transform: 'translateY(-50%)',
+  backgroundColor: '#0009',
+  color: '#fff',
+};
+
+export const ImageViewerPrevious = style({
+  ...mobileGalleryControl,
+  left: config.space.S100,
+});
+
+export const ImageViewerNext = style({
+  ...mobileGalleryControl,
+  right: config.space.S100,
 });

@@ -26,6 +26,7 @@ import {
 import { getLocalStorageItem } from '$state/utils/atomWithLocalStorage';
 import { createLogger } from '$utils/debug';
 import { createDebugLogger } from '$utils/debugLogger';
+import { isMobileTauri } from '$utils/platform';
 import * as Sentry from '@sentry/react';
 import { pushSessionToSW } from '../sw-session';
 import { assertAuthMetadataIssuer, createSessionTokenRefresher } from './oidcTokenRefresher';
@@ -58,6 +59,12 @@ export const ownsActiveMediaSession = (session?: Session): boolean => {
 };
 const presenceStartCleanupByClient = new WeakMap<MatrixClient, () => void>();
 const SLIDING_SYNC_POLL_TIMEOUT_MS = 45000;
+const SLIDING_SYNC_POLL_TIMEOUT_MOBILE_MS = 30000;
+
+/** Shorter poll on mobile: a wedged long-poll costs more when the OS freezes the webview. */
+export const resolvePollTimeoutMs = (configured?: number): number =>
+  configured ??
+  (isMobileTauri() ? SLIDING_SYNC_POLL_TIMEOUT_MOBILE_MS : SLIDING_SYNC_POLL_TIMEOUT_MS);
 
 const isInitialSyncReady = (state: string | null): boolean =>
   state === SyncState.Prepared || state === SyncState.Syncing || state === SyncState.Catchup;
@@ -146,7 +153,15 @@ function installSlidingSyncRequestPatch(mx: MatrixClient, manager: SlidingSyncMa
 
   const mxWritable = mx as MatrixClientWithWritableSlidingSync;
   const original = mx.slidingSync.bind(mx) as SlidingSyncMethod;
-  mxWritable.slidingSync = (reqBody, baseUrl, abortSignal) => {
+  mxWritable.slidingSync = async (reqBody, baseUrl, abortSignal) => {
+    // AbortError makes the SDK loop `continue` and reissue at the same `pos`, no sleep.
+    if (manager.isPaused()) {
+      await manager.waitForResume();
+      const aborted = new Error('Sliding sync paused while backgrounded');
+      aborted.name = 'AbortError';
+      throw aborted;
+    }
+
     const req = reqBody as SlidingSyncRequestWithConnId;
     if (req.conn_id === undefined) {
       req.conn_id = SLIDING_SYNC_CONN_ID;
@@ -437,7 +452,7 @@ export const startClient = async (mx: MatrixClient, config?: StartClientConfig):
     startPresenceAfterInitialSync(mx, presenceManager);
 
     manager = new SlidingSyncManager(mx, baseUrl, {
-      pollTimeoutMs: config?.pollTimeoutMs ?? SLIDING_SYNC_POLL_TIMEOUT_MS,
+      pollTimeoutMs: resolvePollTimeoutMs(config?.pollTimeoutMs),
       timelineLimit: config?.timelineLimit,
       initialRoomIds: config?.initialRoomIds,
     });

@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
     off: vi.fn<() => void>(),
     removeListener: vi.fn<() => void>(),
     stop: vi.fn<() => void>(),
+    resend: vi.fn<() => void>(),
     modifyRoomSubscriptions: vi.fn<() => void>(),
     modifyRoomSubscriptionInfo: vi.fn<() => void>(),
     addCustomSubscription: vi.fn<() => void>(),
@@ -1021,6 +1022,173 @@ describe('SlidingSyncManager.dispose()', () => {
     const manager = makeManager(makeMockMx());
     manager.dispose();
     expect(mocks.slidingSyncInstance.stop).toHaveBeenCalledOnce();
+  });
+});
+
+describe('SlidingSyncManager poll watchdog', () => {
+  // DEFAULT_POLL_TIMEOUT_MS + SDK_CLIENT_TIMEOUT_BUFFER_MS + POLL_DEADLINE_MARGIN_MS
+  const DEFAULT_DEADLINE_MS = 45_000 + 10_000 + 20_000;
+
+  it('cycles the transport when no lifecycle event arrives within the deadline', () => {
+    vi.useFakeTimers();
+    try {
+      const manager = makeManager(makeMockMx());
+      manager.attach();
+
+      expect(mocks.slidingSyncInstance.resend).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(DEFAULT_DEADLINE_MS);
+
+      expect(mocks.slidingSyncInstance.resend).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stays quiet while lifecycle events keep arriving', () => {
+    vi.useFakeTimers();
+    try {
+      const manager = makeManager(makeMockMx());
+      manager.attach();
+
+      for (let i = 0; i < 5; i += 1) {
+        vi.advanceTimersByTime(DEFAULT_DEADLINE_MS - 1_000);
+        fireLifecycle(SlidingSyncState.Complete, {});
+      }
+
+      expect(mocks.slidingSyncInstance.resend).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps cycling when the replacement poll also wedges', () => {
+    vi.useFakeTimers();
+    try {
+      const manager = makeManager(makeMockMx());
+      manager.attach();
+
+      vi.advanceTimersByTime(DEFAULT_DEADLINE_MS);
+      expect(mocks.slidingSyncInstance.resend).toHaveBeenCalledOnce();
+
+      // No lifecycle event arrives, so the watchdog must re-arm itself.
+      vi.advanceTimersByTime(DEFAULT_DEADLINE_MS);
+      expect(mocks.slidingSyncInstance.resend).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(DEFAULT_DEADLINE_MS);
+      expect(mocks.slidingSyncInstance.resend).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not fire after dispose', () => {
+    vi.useFakeTimers();
+    try {
+      const manager = makeManager(makeMockMx());
+      manager.attach();
+      manager.dispose();
+
+      vi.advanceTimersByTime(DEFAULT_DEADLINE_MS * 2);
+
+      expect(mocks.slidingSyncInstance.resend).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('SlidingSyncManager pause/resume', () => {
+  const DEFAULT_DEADLINE_MS = 45_000 + 10_000 + 20_000;
+
+  it('aborts the in-flight poll on pause so the radio goes idle', () => {
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+
+    manager.pause();
+
+    expect(manager.isPaused()).toBe(true);
+    expect(mocks.slidingSyncInstance.resend).toHaveBeenCalledOnce();
+  });
+
+  it('does not tear the transport down', () => {
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+
+    manager.pause();
+
+    expect(mocks.slidingSyncInstance.stop).not.toHaveBeenCalled();
+  });
+
+  it('holds waitForResume() until resume', async () => {
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+    manager.pause();
+
+    let resolved = false;
+    const parked = manager.waitForResume().then(() => {
+      resolved = true;
+    });
+
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+
+    manager.resume();
+    await parked;
+
+    expect(resolved).toBe(true);
+    expect(manager.isPaused()).toBe(false);
+  });
+
+  it('resolves waitForResume() immediately when not paused', async () => {
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+
+    await expect(manager.waitForResume()).resolves.toBeUndefined();
+  });
+
+  it('silences the poll watchdog while paused', () => {
+    vi.useFakeTimers();
+    try {
+      const manager = makeManager(makeMockMx());
+      manager.attach();
+      manager.pause();
+      mocks.slidingSyncInstance.resend.mockClear();
+
+      vi.advanceTimersByTime(DEFAULT_DEADLINE_MS * 3);
+
+      expect(mocks.slidingSyncInstance.resend).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('re-arms the poll watchdog on resume', () => {
+    vi.useFakeTimers();
+    try {
+      const manager = makeManager(makeMockMx());
+      manager.attach();
+      manager.pause();
+      manager.resume();
+      mocks.slidingSyncInstance.resend.mockClear();
+
+      vi.advanceTimersByTime(DEFAULT_DEADLINE_MS);
+
+      expect(mocks.slidingSyncInstance.resend).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('releases parked requests on dispose so the sync loop can unwind', async () => {
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+    manager.pause();
+
+    const parked = manager.waitForResume();
+    manager.dispose();
+
+    await expect(parked).resolves.toBeUndefined();
   });
 });
 

@@ -35,6 +35,9 @@ const LIST_TIMELINE_LIMIT = 1;
 const LIST_PAGE_SIZE = 30;
 const STEADY_STATE_DETAILED_ROOMS = 3;
 const DEFAULT_POLL_TIMEOUT_MS = 45000;
+// Mirrors the js-sdk's own BUFFER_PERIOD_MS so our watchdog sits after its `clientTimeout`.
+const SDK_CLIENT_TIMEOUT_BUFFER_MS = 10_000;
+const POLL_DEADLINE_MARGIN_MS = 20_000;
 
 const LIST_SORT_ORDER = ['by_recency', 'by_name'];
 
@@ -344,6 +347,14 @@ export class SlidingSyncManager {
   /** Wall-clock time recorded in attach() — used to compute true initial-sync latency. */
   private attachTime: number | null = null;
 
+  private readonly pollDeadlineMs: number;
+
+  private pollWatchdogTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
+
+  private paused = false;
+
+  private readonly resumeWaiters = new Set<() => void>();
+
   /** Span covering the period from attach() to the first successful complete cycle. */
   private initialSyncSpan: ReturnType<typeof Sentry.startInactiveSpan> | null = null;
 
@@ -355,6 +366,7 @@ export class SlidingSyncManager {
     options: SlidingSyncOptions = {}
   ) {
     const pollTimeoutMs = clampPositive(options.pollTimeoutMs, DEFAULT_POLL_TIMEOUT_MS);
+    this.pollDeadlineMs = pollTimeoutMs + SDK_CLIENT_TIMEOUT_BUFFER_MS + POLL_DEADLINE_MARGIN_MS;
 
     const roomTimelineLimit = clampPositive(options.timelineLimit, ACTIVE_ROOM_TIMELINE_LIMIT);
     this.roomTimelineLimit = roomTimelineLimit;
@@ -411,6 +423,8 @@ export class SlidingSyncManager {
         });
         return;
       }
+
+      this.armPollWatchdog();
 
       if (state === SlidingSyncState.RequestFinished) {
         if (!err && resp) {
@@ -594,7 +608,70 @@ export class SlidingSyncManager {
     this.mx.on(RoomMemberEvent.Membership, this.onMembershipLeave);
     this.mx.on(ClientEvent.AccountData, this.onCacheAccountData);
 
+    this.armPollWatchdog();
+
     debugLog.info('sync', 'Sliding sync listeners attached successfully');
+  }
+
+  /**
+   * Backstop for the SDK's own `clientTimeout`, which is a JS timer and so cannot fire
+   * while a mobile webview is frozen. Re-arms itself because the SDK's abort path
+   * `continue`s without emitting a lifecycle event.
+   */
+  private armPollWatchdog(): void {
+    if (this.disposed) return;
+    globalThis.clearTimeout(this.pollWatchdogTimer);
+    this.pollWatchdogTimer = globalThis.setTimeout(() => {
+      this.pollWatchdogTimer = undefined;
+      if (this.disposed) return;
+      debugLog.warn('sync', 'Sliding sync poll exceeded client-side deadline; cycling transport', {
+        pollDeadlineMs: this.pollDeadlineMs,
+        syncNumber: this.syncCount,
+      });
+      this.slidingSync.resend();
+      this.armPollWatchdog();
+    }, this.pollDeadlineMs);
+  }
+
+  /**
+   * Stop issuing requests without tearing the transport down. `SlidingSync.stop()` is
+   * terminal and drops the `pos` token held in `start()`, so stop/start would force a
+   * full initial sync on every resume; the request patch parks on `waitForResume()`
+   * instead.
+   */
+  public pause(): void {
+    if (this.paused || this.disposed) return;
+    this.paused = true;
+    globalThis.clearTimeout(this.pollWatchdogTimer);
+    this.pollWatchdogTimer = undefined;
+    this.slidingSync.resend();
+    debugLog.info('sync', 'Sliding sync paused');
+  }
+
+  public resume(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    this.releaseResumeWaiters();
+    this.armPollWatchdog();
+    debugLog.info('sync', 'Sliding sync resumed');
+  }
+
+  public isPaused(): boolean {
+    return this.paused;
+  }
+
+  /** Resolves on the next resume(), or immediately when not paused. */
+  public waitForResume(): Promise<void> {
+    if (!this.paused) return Promise.resolve();
+    return new Promise((resolve) => {
+      this.resumeWaiters.add(resolve);
+    });
+  }
+
+  private releaseResumeWaiters(): void {
+    const waiters = Array.from(this.resumeWaiters);
+    this.resumeWaiters.clear();
+    waiters.forEach((resolve) => resolve());
   }
 
   public dispose(): void {
@@ -619,6 +696,10 @@ export class SlidingSyncManager {
     this.hydrationStatusListeners.clear();
 
     this.disposed = true;
+    this.paused = false;
+    this.releaseResumeWaiters();
+    globalThis.clearTimeout(this.pollWatchdogTimer);
+    this.pollWatchdogTimer = undefined;
     this.slidingSync.stop();
     this.slidingSync.removeListener(SlidingSyncEvent.Lifecycle, this.onLifecycle);
     this.slidingSync.removeListener(SlidingSyncEvent.RoomData, this.onCacheRoomData);

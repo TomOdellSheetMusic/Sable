@@ -68,6 +68,13 @@ describe('pickNativeFile', () => {
     expect(readFile).not.toHaveBeenCalled();
   });
 
+  it('throws instead of silently dropping entries that are not paths', async () => {
+    mocks.open.mockResolvedValue([{ relative: 'file:///photos/img.HEIC' }] as never);
+
+    await expect(pickNativeFile('media')).rejects.toThrow('unusable entries');
+    expect(readFile).not.toHaveBeenCalled();
+  });
+
   it('opens the native document picker and converts selected paths to Files', async () => {
     mocks.open.mockResolvedValue('/documents/report.pdf');
 

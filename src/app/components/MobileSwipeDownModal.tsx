@@ -29,6 +29,7 @@ interface MobileSwipeDownModalProps {
   sheetStyle?: CSSProperties;
   keyboardAware?: boolean;
   zIndex?: number;
+  overlayDragHandle?: boolean;
 }
 
 type FocusTrapOptions = ComponentProps<typeof FocusTrap>['focusTrapOptions'];
@@ -105,6 +106,7 @@ export function MobileSwipeDownModal({
   sheetStyle,
   keyboardAware = false,
   zIndex,
+  overlayDragHandle = false,
 }: MobileSwipeDownModalProps) {
   const sheetRef = useRef<HTMLDivElement>(null);
   const backdropTouchRef = useRef(false);
@@ -310,6 +312,7 @@ export function MobileSwipeDownModal({
       className={css.MessageMobileDragHandle}
       data-gestures="ignore"
       data-testid="mobile-sheet-drag-handle"
+      style={overlayDragHandle ? { position: 'absolute', top: 0, right: 0, left: 0 } : undefined}
       {...{ [HANDLE_ATTRIBUTE]: '' }}
     >
       <div className={css.MessageMobileDragIndicator} />
@@ -383,7 +386,11 @@ export function MobileSwipeDownModal({
         className={`${css.MessageMobileOptionsContainer} ${sheetClassName ?? ''} ${
           portalRef ? css.MessageMobileOptionsContainerContained : ''
         } ${animationCss.SheetEntrance}`}
-        style={{ ...(shouldReduceMotion ? { animation: 'none' } : undefined), ...sheetStyle }}
+        style={{
+          ...(overlayDragHandle ? { overflow: 'hidden' } : undefined),
+          ...(shouldReduceMotion ? { animation: 'none' } : undefined),
+          ...sheetStyle,
+        }}
         onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
         onPointerMove={(e: React.PointerEvent) => e.stopPropagation()}
         onPointerUp={(e: React.PointerEvent) => e.stopPropagation()}

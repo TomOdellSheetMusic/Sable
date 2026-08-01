@@ -162,6 +162,22 @@ describe('MobileSwipeDownModal', () => {
     expect(panel).toHaveStyle({ backgroundColor: '#663399' });
   });
 
+  it('can overlay the drag handle without reserving a header row', () => {
+    render(
+      <MobileSwipeDownModal requestClose={vi.fn<() => void>()} overlayDragHandle>
+        {() => <div data-testid="under-handle-content" />}
+      </MobileSwipeDownModal>
+    );
+
+    expect(screen.getByTestId('mobile-sheet-drag-handle')).toHaveStyle({
+      position: 'absolute',
+      top: '0px',
+    });
+    expect(screen.getByTestId('under-handle-content').parentElement?.parentElement).toHaveStyle({
+      overflow: 'hidden',
+    });
+  });
+
   it('lifts the sheet clear of the keyboard with a transition, without resizing it', () => {
     const viewport = mockVisualViewport(800);
     let contentRenderCount = 0;

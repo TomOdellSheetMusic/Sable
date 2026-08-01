@@ -33,6 +33,7 @@ type ResponsiveMenuProps = {
   surfaceColor?: string;
   /** Raises a mobile sheet above a parent fullscreen overlay. */
   mobileZIndex?: number;
+  overlayDragHandle?: boolean;
 };
 
 function MenuDialog({
@@ -141,6 +142,7 @@ export function ResponsiveMenu({
   mobile = 'sheet',
   surfaceColor,
   mobileZIndex,
+  overlayDragHandle = false,
 }: ResponsiveMenuProps) {
   // Null outside a provider, where desktop is the safe assumption.
   const isMobile = useScreenSizeOptionally() === ScreenSize.Mobile;
@@ -198,6 +200,7 @@ export function ResponsiveMenu({
             requestClose={requestClose}
             sheetStyle={sheetStyle}
             zIndex={mobileZIndex}
+            overlayDragHandle={overlayDragHandle}
           >
             {() => (
               <MobileSheetFocusTrap

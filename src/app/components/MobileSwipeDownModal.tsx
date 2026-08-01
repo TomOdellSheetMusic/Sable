@@ -52,20 +52,21 @@ function getKeyboardOverlap(): number {
   return Math.max(0, window.innerHeight - viewport.offsetTop - viewport.height);
 }
 
-/** Nearest ancestor between `from` and the sheet that can actually scroll vertically. */
-function findScroller(from: HTMLElement | null, boundary: HTMLElement): HTMLElement | null {
+/** Whether any scrollable ancestor is scrolled away from its top edge. */
+function hasScrolledAncestor(from: HTMLElement | null, boundary: HTMLElement): boolean {
   let element = from;
   while (element && element !== boundary) {
     const { overflowY } = window.getComputedStyle(element);
     if (
       (overflowY === 'auto' || overflowY === 'scroll') &&
-      element.scrollHeight > element.clientHeight
+      element.scrollHeight > element.clientHeight &&
+      element.scrollTop > 0
     ) {
-      return element;
+      return true;
     }
     element = element.parentElement;
   }
-  return null;
+  return false;
 }
 
 export function useMobileSheetClose() {
@@ -240,12 +241,13 @@ export function MobileSwipeDownModal({
     const from = target instanceof HTMLElement ? target : null;
     // The handle is not over any content, so it always drags.
     if (from?.closest(`[${HANDLE_ATTRIBUTE}]`)) return true;
+    // Mobile menu actions activate on pointer-up in Android WebView, so dismissing
+    // from one could also invoke the action.
     if (from?.closest(`[${NO_DRAG_ATTRIBUTE}]`)) return false;
     if (window.getSelection()?.toString()) return false;
     if (Date.now() - dragBlockedAtRef.current < DRAG_BLOCKED_COOLDOWN_MS) return false;
 
-    const scroller = findScroller(from, sheet);
-    if (scroller && scroller.scrollTop > 0) {
+    if (hasScrolledAncestor(from, sheet)) {
       dragBlockedAtRef.current = Date.now();
       return false;
     }

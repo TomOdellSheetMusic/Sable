@@ -468,7 +468,7 @@ describe('MobileSwipeDownModal', () => {
       }
     });
 
-    it('leaves a marked scroll container to native scrolling at its top', async () => {
+    it('leaves the gesture to an outer list scrolled away from the top', async () => {
       const requestClose = vi.fn<() => void>();
       const restore = stubElementAnimations();
 
@@ -476,15 +476,19 @@ describe('MobileSwipeDownModal', () => {
         render(
           <MobileSwipeDownModal requestClose={requestClose}>
             {() => (
-              <div data-mobile-sheet-no-drag="" data-testid="marked-scroller">
-                <div data-testid="marked-scroll-row" />
+              <div data-testid="outer-scroller" style={{ overflowY: 'auto' }}>
+                <div data-testid="inner-scroller" style={{ overflowY: 'auto' }}>
+                  <div data-testid="scroll-row" />
+                </div>
               </div>
             )}
           </MobileSwipeDownModal>
         );
         await act(async () => {});
+        makeScrollable(screen.getByTestId('outer-scroller'), 120);
+        makeScrollable(screen.getByTestId('inner-scroller'), 0);
 
-        dragDown(screen.getByTestId('marked-scroll-row'), 100, 240);
+        dragDown(screen.getByTestId('scroll-row'), 100, 240);
 
         expect(requestClose).not.toHaveBeenCalled();
       } finally {

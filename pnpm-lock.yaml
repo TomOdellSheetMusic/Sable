@@ -55,6 +55,12 @@ importers:
       '@phosphor-icons/react':
         specifier: ^2.1.10
         version: 2.1.10(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@sableclient/matrixrtc':
+        specifier: github:SableClient/matrix-rtc#f39530bba3c490c689429b6d240f41430ef38b1d
+        version: https://codeload.github.com/SableClient/matrix-rtc/tar.gz/f39530bba3c490c689429b6d240f41430ef38b1d(livekit-client@2.21.0(@types/dom-mediacapture-record@1.0.22))(matrix-js-sdk@42.0.0)
+      '@sableclient/tauri-plugin-livekit-mobile':
+        specifier: github:SableClient/tauri-plugin-livekit-mobile#af871fd438e6d7337d2647535cbdf3eb67e8517a
+        version: https://codeload.github.com/SableClient/tauri-plugin-livekit-mobile/tar.gz/af871fd438e6d7337d2647535cbdf3eb67e8517a
       '@sableclient/twemoji-font':
         specifier: ^1.0.4
         version: 1.0.4
@@ -2663,8 +2669,20 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@sableclient/matrixrtc@https://codeload.github.com/SableClient/matrix-rtc/tar.gz/f39530bba3c490c689429b6d240f41430ef38b1d':
+    resolution: {tarball: https://codeload.github.com/SableClient/matrix-rtc/tar.gz/f39530bba3c490c689429b6d240f41430ef38b1d}
+    version: 0.1.0
+    engines: {node: '>=20'}
+    peerDependencies:
+      livekit-client: ^2.21.0
+      matrix-js-sdk: ^42.0.0
+
   '@sableclient/sable-call-embedded@1.1.8':
     resolution: {integrity: sha512-+95vxaqTxh5gIrIwMX+FWH4n+K82rv/hlVIO/KIhIl2udJ2+r/GESiAElnTXa1bom1+FWrdekNvkCEEuh7m2Jw==}
+
+  '@sableclient/tauri-plugin-livekit-mobile@https://codeload.github.com/SableClient/tauri-plugin-livekit-mobile/tar.gz/af871fd438e6d7337d2647535cbdf3eb67e8517a':
+    resolution: {tarball: https://codeload.github.com/SableClient/tauri-plugin-livekit-mobile/tar.gz/af871fd438e6d7337d2647535cbdf3eb67e8517a}
+    version: 0.1.0
 
   '@sableclient/twemoji-font@1.0.4':
     resolution: {integrity: sha512-LzvQB/VZtv5KEq1VYq2azr7v7cYT8oklOVRGkAN2RNwa3sF0XcnqM3lBHSYRFXQleGLSUgs3gA0slbwkD2+sJw==}
@@ -7812,7 +7830,16 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.62.0':
     optional: true
 
+  '@sableclient/matrixrtc@https://codeload.github.com/SableClient/matrix-rtc/tar.gz/f39530bba3c490c689429b6d240f41430ef38b1d(livekit-client@2.21.0(@types/dom-mediacapture-record@1.0.22))(matrix-js-sdk@42.0.0)':
+    dependencies:
+      livekit-client: 2.21.0(@types/dom-mediacapture-record@1.0.22)
+      matrix-js-sdk: 42.0.0
+
   '@sableclient/sable-call-embedded@1.1.8': {}
+
+  '@sableclient/tauri-plugin-livekit-mobile@https://codeload.github.com/SableClient/tauri-plugin-livekit-mobile/tar.gz/af871fd438e6d7337d2647535cbdf3eb67e8517a':
+    dependencies:
+      '@tauri-apps/api': 2.11.1
 
   '@sableclient/twemoji-font@1.0.4': {}
 

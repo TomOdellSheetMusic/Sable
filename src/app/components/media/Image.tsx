@@ -3,6 +3,7 @@ import { forwardRef, lazy, Suspense, useCallback, useEffect, useRef, useState } 
 import classNames from 'classnames';
 import type { DotLottieReact as DotLottieReactComponent } from '@lottiefiles/dotlottie-react';
 import { useSetting } from '$state/hooks/settings';
+import { useTauriMediaObjectUrl } from '$hooks/useTauriMediaObjectUrl';
 import { isPixelatedRendering, settingsAtom } from '$state/settings';
 import * as css from './media.css';
 import type { IImageInfo } from '$types/matrix/common';
@@ -13,6 +14,12 @@ type ImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, 'onPointerDown'> & {
   disableDefaultSizing?: boolean;
   disablePixelation?: boolean;
   pixelated?: boolean;
+  /**
+   * Cache through the Tauri session blob cache (like thumbnails) when the image is
+   * small — for picker grids where the same tiles remount constantly. Gates on
+   * `info.size` so large media stays on the native streaming path.
+   */
+  sessionCache?: boolean;
   onLottieLoad?: (canvas?: HTMLCanvasElement) => void;
   onLottieError?: () => void;
   onPointerDown?: PointerEventHandler<HTMLElement>;
@@ -27,12 +34,19 @@ type DotLottieInstance = Parameters<
 >[0];
 
 const DotLottieReact = lazy(() =>
-  import('@lottiefiles/dotlottie-react').then((module) => ({
-    default: module.DotLottieReact,
-  }))
+  Promise.all([
+    import('@lottiefiles/dotlottie-react'),
+    // Bundle the player WASM: the default downloads it from a public CDN at runtime,
+    // which stalls or fails entirely on slow or locked-down networks.
+    import('@lottiefiles/dotlottie-web/dist/dotlottie-player.wasm?url'),
+  ]).then(([module, wasm]) => {
+    module.setWasmUrl(wasm.default);
+    return { default: module.DotLottieReact };
+  })
 ) as typeof DotLottieReactComponent;
 
 const GZIPPED_LOTTIE_MIME = /^application\/(?:(?:x-)?gzip|x-tgsticker)(?:;|$)/i;
+const MAX_SESSION_CACHE_BYTES = 512 * 1024;
 const MAX_COMPRESSED_LOTTIE_BYTES = 1024 * 1024;
 const MAX_DECOMPRESSED_LOTTIE_BYTES = 8 * 1024 * 1024;
 const MAX_LOTTIE_DIMENSION = 4096;
@@ -391,6 +405,7 @@ export const Image = forwardRef<HTMLImageElement | HTMLCanvasElement, ImageProps
       disableDefaultSizing,
       disablePixelation,
       loading = 'lazy',
+      decoding = 'async',
       onLoad,
       onPointerDown,
       src,
@@ -399,6 +414,7 @@ export const Image = forwardRef<HTMLImageElement | HTMLCanvasElement, ImageProps
       onLottieLoad,
       onLottieError,
       pixelated,
+      sessionCache,
       ...props
     },
     ref
@@ -452,6 +468,21 @@ export const Image = forwardRef<HTMLImageElement | HTMLCanvasElement, ImageProps
       setFallbackSource(undefined);
     }, [src]);
 
+    // A lottie candidate is not an image request until it resolves to non-animation data.
+    const imageSource = resolvedLottieJson === null ? src : undefined;
+    // Tauri webviews don't HTTP-cache scheme-served media: route thumbnails and small
+    // picker images through a session blob cache. Full media/video/audio stay native
+    // (blob buffering would inflate memory and break Range streaming).
+    const smallEnough =
+      sessionCache === true && (info?.size === undefined || info.size <= MAX_SESSION_CACHE_BYTES);
+    const cacheSrc =
+      imageSource !== undefined &&
+      (smallEnough || imageSource.includes('thumbnail'))
+        ? imageSource
+        : undefined;
+    const tauriObjectSrc = useTauriMediaObjectUrl(cacheSrc);
+    const renderedSrc = cacheSrc !== undefined ? tauriObjectSrc : imageSource;
+
     const shouldRenderLottie = typeof resolvedLottieJson === 'string';
 
     if (shouldRenderLottie) {
@@ -476,13 +507,22 @@ export const Image = forwardRef<HTMLImageElement | HTMLCanvasElement, ImageProps
       );
     }
 
+    if (src !== undefined && renderedSrc === undefined) {
+      // Resolving through the Tauri blob cache or probing a lottie candidate: show a
+      // placeholder tile instead of a src-less <img>, which some webviews render as a
+      // broken icon.
+      return (
+        <span className={imageClass} role="img" aria-label={alt} aria-busy style={style} />
+      );
+    }
+
     return (
       <img
         className={imageClass}
         alt={alt}
         loading={loading}
-        src={resolvedLottieJson === undefined ? undefined : src}
-        aria-busy={resolvedLottieJson === undefined ? true : undefined}
+        decoding={decoding}
+        src={renderedSrc}
         style={style}
         onLoad={onLoad}
         onPointerDown={onPointerDown}

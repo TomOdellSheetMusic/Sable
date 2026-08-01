@@ -135,16 +135,19 @@ describe('Image', () => {
       />
     );
 
-    const image = screen.getByAltText('undeclared broken image');
-    fireEvent.error(image);
-    expect(image).not.toHaveAttribute('src');
+    fireEvent.error(screen.getByAltText('undeclared broken image'));
     expect(onError).not.toHaveBeenCalled();
 
+    // While the fallback probe runs, a labeled placeholder replaces the img.
     await waitFor(() =>
-      expect(image).toHaveAttribute('src', 'https://example.com/undeclared-broken-media')
+      expect(screen.getByLabelText('undeclared broken image').tagName).toBe('SPAN')
     );
-    fireEvent.error(image);
 
+    // Probe resolves to "not lottie": the plain img comes back with its src.
+    const resolved = await screen.findByAltText('undeclared broken image');
+    expect(resolved).toHaveAttribute('src', 'https://example.com/undeclared-broken-media');
+
+    fireEvent.error(resolved);
     expect(onError).toHaveBeenCalledOnce();
     expect(fetchSpy).toHaveBeenCalledOnce();
     fetchSpy.mockRestore();
@@ -168,7 +171,10 @@ describe('Image', () => {
         screen.getAllByLabelText('repeated lottie').every((item) => item.tagName === 'CANVAS')
       ).toBe(true);
     });
-    expect(fetchSpy).toHaveBeenCalledOnce();
+    const mediaCalls = fetchSpy.mock.calls.filter((c) =>
+      typeof c[0] === 'string' ? c[0] : String(c[0] instanceof Request ? c[0].url : c[0]).includes('repeated-sticker')
+    );
+    expect(mediaCalls).toHaveLength(1);
     fetchSpy.mockRestore();
   });
 
@@ -183,8 +189,11 @@ describe('Image', () => {
     const source = 'https://example.com/transient-sticker.tgs';
     const firstRender = render(<Image src={source} aria-label="transient lottie" />);
 
-    await waitFor(() => expect(screen.getByLabelText('transient lottie')).toHaveAttribute('src'));
-    expect(screen.getByLabelText('transient lottie').tagName).toBe('IMG');
+    await waitFor(() => {
+      const el = screen.getByLabelText('transient lottie');
+      expect(el.tagName).toBe('IMG');
+      expect(el).toHaveAttribute('src', source);
+    });
     firstRender.unmount();
 
     render(<Image src={source} aria-label="transient lottie" />);
@@ -192,7 +201,8 @@ describe('Image', () => {
       expect(screen.getByLabelText('transient lottie').tagName).toBe('CANVAS');
     });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const mediaCalls = fetchSpy.mock.calls.filter((c) => typeof c[0] === 'string' ? c[0] : String(c[0] instanceof Request ? c[0].url : c[0]) === source);
+    expect(mediaCalls).toHaveLength(2);
     fetchSpy.mockRestore();
   });
 
@@ -227,9 +237,8 @@ describe('Image', () => {
       />
     );
 
-    const image = screen.getByAltText('oversized lottie');
-    await waitFor(() => expect(image).toHaveAttribute('src'));
-    expect(image.tagName).toBe('IMG');
+    const image = await screen.findByAltText('oversized lottie');
+    expect(image).toHaveAttribute('src');
   });
 
   it('forwards a candidate fallback error after detection fails', async () => {
@@ -241,12 +250,8 @@ describe('Image', () => {
       <Image src="data:application/gzip;base64,bm90LWd6aXBwZWQ=" alt="broken" onError={onError} />
     );
 
-    const image = screen.getByAltText('broken');
-    expect(image).not.toHaveAttribute('src');
-
-    await waitFor(() => {
-      expect(image).toHaveAttribute('src', 'data:application/gzip;base64,bm90LWd6aXBwZWQ=');
-    });
+    const image = await screen.findByAltText('broken');
+    expect(image).toHaveAttribute('src', 'data:application/gzip;base64,bm90LWd6aXBwZWQ=');
     fireEvent.error(image);
 
     expect(onError).toHaveBeenCalledOnce();

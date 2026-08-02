@@ -4,6 +4,8 @@ import type { RoomJoinRulesEventContent, Room } from '$types/matrix-sdk';
 import { RoomEvent, RoomStateEvent, EventType } from '$types/matrix-sdk';
 
 import { mDirectAtom } from '$state/mDirectList';
+import { getDmOtherMember, getMemberDisplayName } from '$utils/room/display';
+import { useMatrixClient } from './useMatrixClient';
 import { useStateEvent } from './useStateEvent';
 import { useNickname } from './useNickname';
 
@@ -11,18 +13,21 @@ const getRoomDisplayName = (
   roomName: string,
   stateName: unknown,
   isDmTagged: boolean,
-  dmNickname?: string
+  dmNickname?: string,
+  dmOtherMemberName?: string
 ): string => {
   if (isDmTagged && dmNickname) return dmNickname;
   if (typeof stateName === 'string' && stateName) return stateName;
+  if (isDmTagged && dmOtherMemberName) return dmOtherMemberName;
   return roomName;
 };
 
 export const useRoomAvatar = (room: Room, dm?: boolean): string | undefined => {
+  const mx = useMatrixClient();
   const avatarEvent = useStateEvent(room, EventType.RoomAvatar);
 
   if (dm) {
-    return room.getAvatarFallbackMember()?.getMxcAvatarUrl();
+    return getDmOtherMember(mx, room)?.getMxcAvatarUrl();
   }
   const content = avatarEvent?.getContent();
   const avatarMxc = content && typeof content.url === 'string' ? content.url : undefined;
@@ -31,6 +36,7 @@ export const useRoomAvatar = (room: Room, dm?: boolean): string | undefined => {
 };
 
 export const useRoomName = (room: Room): string => {
+  const mx = useMatrixClient();
   const dmUserId = room.guessDMUserId();
   const dmNickname = useNickname(dmUserId || '');
   const mDirects = useAtomValue(mDirectAtom);
@@ -45,7 +51,21 @@ export const useRoomName = (room: Room): string => {
         room.recalculate();
       }
 
-      const nextName = getRoomDisplayName(room.name, stateName, isDmTagged, dmNickname);
+      // Bridge portals add a persistent bot to the room, so the SDK's own
+      // hero-based room.name lists it as a participant. Prefer the actual
+      // other member's name for tagged DMs.
+      const otherMember = isDmTagged ? getDmOtherMember(mx, room) : undefined;
+      const dmOtherMemberName = otherMember
+        ? (getMemberDisplayName(room, otherMember.userId) ?? otherMember.userId)
+        : undefined;
+
+      const nextName = getRoomDisplayName(
+        room.name,
+        stateName,
+        isDmTagged,
+        dmNickname,
+        dmOtherMemberName
+      );
       setName((prev) => (prev !== nextName ? nextName : prev));
     };
 
@@ -58,7 +78,7 @@ export const useRoomName = (room: Room): string => {
       room.removeListener(RoomEvent.Name, updateName);
       room.removeListener(RoomStateEvent.Members, updateName);
     };
-  }, [room, stateName, dmNickname, isDmTagged]);
+  }, [room, mx, stateName, dmNickname, isDmTagged]);
 
   return name;
 };

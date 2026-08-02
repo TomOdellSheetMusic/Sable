@@ -81,13 +81,8 @@ import type { GifData } from '$components/emoji-board';
 import { EmojiBoard, EmojiBoardTab } from '$components/emoji-board';
 import { UseStateProvider } from '$components/UseStateProvider';
 import type { TUploadContent } from '$utils/matrix';
-import {
-  cancelUploadContent,
-  encryptFile,
-  getImageInfo,
-  mxcUrlToHttp,
-  toggleReaction,
-} from '$utils/matrix';
+import { cancelUploadContent, encryptFile, getImageInfo, mxcUrlToHttp } from '$utils/matrix';
+import { toggleReaction } from '$utils/room/reactions';
 import { useTypingStatusUpdater } from '$hooks/useTypingStatusUpdater';
 import { useFilePicker } from '$hooks/useFilePicker';
 import { useFilePasteHandler } from '$hooks/useFilePasteHandler';
@@ -1039,7 +1034,9 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           const lastMessageId = lastMessage?.getId();
 
           if (lastMessageId) {
-            toggleReaction(mx, room, lastMessageId, key, shortcode);
+            toggleReaction(mx, room, lastMessageId, key, shortcode).catch((err: unknown) => {
+              debugLog.error('ui', 'Reaction toggle failed', { eventId: lastMessageId, key, err });
+            });
           }
         }
 

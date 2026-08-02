@@ -51,9 +51,6 @@ export const useRoomName = (room: Room): string => {
         room.recalculate();
       }
 
-      // Bridge portals add a persistent bot to the room, so the SDK's own
-      // hero-based room.name lists it as a participant. Prefer the actual
-      // other member's name for tagged DMs.
       const otherMember = isDmTagged ? getDmOtherMember(mx, room) : undefined;
       const dmOtherMemberName = otherMember
         ? (getMemberDisplayName(room, otherMember.userId) ?? otherMember.userId)

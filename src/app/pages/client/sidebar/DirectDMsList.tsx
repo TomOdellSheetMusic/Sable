@@ -47,8 +47,6 @@ function DMItem({ room, selected }: DMItemProps) {
   // Use already-synced room state only; sidebar rendering must not trigger member/profile requests.
   const groupMembers = useGroupDMMembers(mx, room, MAX_GROUP_MEMBERS);
 
-  // A "group DM" has more than one other real member once bridge bots are
-  // filtered out (a bridged 1:1 DM has a bot alongside the actual contact).
   const isGroupDM = groupMembers.length > 1;
 
   // Get unread info for badge

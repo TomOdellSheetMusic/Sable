@@ -24,9 +24,7 @@ export const getRoomAvatarUrl = (
   useAuthentication = false
 ): string | undefined => getAvatarUrl(mx, room.getMxcAvatarUrl(), size, useAuthentication);
 
-// Bridges (Signal, WhatsApp, etc.) add a persistent bot member to 1:1 DM
-// portals, which the SDK counts as a real participant. Filter it out so a
-// bridged DM is still treated as a 1:1 with the actual contact.
+// Bridges add a persistent bot member to 1:1 DM portals that the SDK counts as a real participant.
 export const isBridgeBot = (userId: string): boolean => {
   const localpart = userId.split(':')[0]?.substring(1) ?? '';
   return localpart.toLowerCase().endsWith('bot');

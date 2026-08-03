@@ -68,7 +68,8 @@ async function main() {
     logger.info('Building without the auto-updater (--no-updater)');
   }
 
-  const features = noUpdater ? platform : `${platform},updater`;
+  const base = noUpdater ? platform : `${platform},updater`;
+  const features = `${base},matrix-crypto`;
   const args = [cmd, '--features', features, ...tauriArgs];
   if (!tauriArgs.includes('--')) {
     args.push('--');

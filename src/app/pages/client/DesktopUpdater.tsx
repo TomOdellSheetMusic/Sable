@@ -29,6 +29,7 @@ export function DesktopUpdater() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
+  const [installError, setInstallError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [useCustomTitleBar] = useDesktopSetting('useCustomTitleBar');
   const hasUpdateRef = useRef(false);
@@ -145,6 +146,7 @@ export function DesktopUpdater() {
     if (!updateInfo || installStartedRef.current) return;
     installStartedRef.current = true;
     try {
+      setInstallError(null);
       setIsDownloading(true);
       setPhase({ type: 'downloading', progress: 0 });
 
@@ -180,8 +182,10 @@ export function DesktopUpdater() {
       closePendingUpdate(updateInfo);
     } catch (err) {
       log.error('Failed to install update', err);
+      setInstallError(err instanceof Error ? err.message : String(err));
       setIsDownloading(false);
       setIsInstalling(false);
+      setPhase({ type: 'ready', version: updateInfo.version });
       installStartedRef.current = false;
     }
   }, [closePendingUpdate, updateInfo, setPhase]);
@@ -223,6 +227,26 @@ export function DesktopUpdater() {
       };
     }
 
+    if (installError) {
+      return {
+        id: 'desktop-update-ready',
+        priority: 200,
+        icon: ArrowUp,
+        title: 'Update Failed',
+        description: installError,
+        primaryAction: {
+          label: 'Retry',
+          variant: 'Primary',
+          onClick: handleInstall,
+        },
+        secondaryAction: {
+          label: 'Later',
+          variant: 'Secondary',
+          onClick: handleDismiss,
+        },
+      };
+    }
+
     return {
       id: 'desktop-update-ready',
       priority: 200,
@@ -251,6 +275,7 @@ export function DesktopUpdater() {
     isDownloading,
     isInstalled,
     isInstalling,
+    installError,
     handleInstall,
     handleRestart,
     handleDismiss,

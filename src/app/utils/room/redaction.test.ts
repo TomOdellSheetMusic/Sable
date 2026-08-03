@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { MatrixClient, Room } from '$types/matrix-sdk';
 import { EventStatus, MatrixEvent } from '$types/matrix-sdk';
-import { isLocalEventId, redactEvent } from './redaction';
+import { isLocalEventId, redactEvent, waitForRemoteEventId } from './redaction';
 
 const ROOM_ID = '!r:example.org';
 
@@ -79,5 +79,16 @@ describe('redactEvent', () => {
     await redacting;
 
     expect(mx.redactEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('waitForRemoteEventId', () => {
+  it('waits for a pending event to receive its server id', async () => {
+    const mEvent = makeEvent('~!r:example.org:txn1', EventStatus.SENDING);
+    const eventId = waitForRemoteEventId(mEvent);
+
+    mEvent.replaceLocalEventId('$real');
+
+    await expect(eventId).resolves.toBe('$real');
   });
 });

@@ -12,7 +12,7 @@ const CANCELLABLE_STATUSES = new Set<EventStatus | null>([
 export const isLocalEventId = (eventId: string): boolean =>
   eventId.startsWith(LOCAL_EVENT_ID_PREFIX);
 
-const waitForRemoteEventId = (mEvent: MatrixEvent): Promise<string | undefined> =>
+export const waitForRemoteEventId = (mEvent: MatrixEvent): Promise<string | undefined> =>
   new Promise((resolve) => {
     const settle = (eventId: string | undefined) => {
       mEvent.off(MatrixEventEvent.LocalEventIdReplaced, onIdReplaced);
@@ -27,6 +27,12 @@ const waitForRemoteEventId = (mEvent: MatrixEvent): Promise<string | undefined> 
     }
     mEvent.on(MatrixEventEvent.LocalEventIdReplaced, onIdReplaced);
     mEvent.on(MatrixEventEvent.Status, onStatus);
+
+    const eventId = mEvent.getId();
+    if (eventId && !isLocalEventId(eventId)) settle(eventId);
+    else if (mEvent.status === EventStatus.NOT_SENT || mEvent.status === EventStatus.CANCELLED) {
+      settle(undefined);
+    }
   });
 
 // mx.redactEvent throws on a local echo id: it resolves the target through

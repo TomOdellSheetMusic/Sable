@@ -107,6 +107,7 @@ import type { EditorButtonId } from '$state/settings';
 import { settingsAtom } from '$state/settings';
 import { matchesShortcut } from '../../keyboard/shortcuts';
 import { getEditedEvent, getMentionContent, getThreadReplyEvents } from '$utils/room/relations';
+import { isLocalEventId, waitForRemoteEventId } from '$utils/room/redaction';
 import { buildReplacementContent } from './buildReplacementContent';
 import { htmlToMarkdown } from '$plugins/markdown';
 import { Command, SHRUG, TABLEFLIP, UNFLIP, useCommands } from '$hooks/useCommands';
@@ -1064,8 +1065,13 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         );
         const oldContent = editingEvent.getContent();
         const currentContent = getEditingContent(editingEvent);
-        const eventId = editingEvent.getId();
+        let eventId = editingEvent.getId();
         if (!eventId) return;
+
+        if (isLocalEventId(eventId)) {
+          eventId = await waitForRemoteEventId(editingEvent);
+          if (!eventId) return;
+        }
 
         const rawPmp =
           currentContent['com.beeper.per_message_profile'] ??

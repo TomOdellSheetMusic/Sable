@@ -62,6 +62,7 @@ import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useDismissOnBack } from '$utils/androidBack';
 import { nicknamesAtom } from '$state/nicknames';
 import { getEditedEvent, getMentionContent } from '$utils/room/relations';
+import { isLocalEventId, waitForRemoteEventId } from '$utils/room/redaction';
 import { trimReplyFromFormattedBody } from '$utils/room/display';
 import { buildReplacementContent } from '../buildReplacementContent';
 import { isMobileOrTablet } from '$utils/platform';
@@ -245,8 +246,13 @@ export const MessageEditor = as<'div', MessageEditorProps>(
         const [prevBody, prevCustomHtml, prevMentions] = getPrevBodyAndFormattedBody();
 
         if (plainText === '') return undefined;
-        const eventId = mEvent.getId();
+        let eventId = mEvent.getId();
         if (!eventId) return undefined;
+
+        if (isLocalEventId(eventId)) {
+          eventId = await waitForRemoteEventId(mEvent);
+          if (!eventId) return undefined;
+        }
 
         if (prevBody) {
           if (prevCustomHtml && trimReplyFromFormattedBody(prevCustomHtml) === customHtml) {

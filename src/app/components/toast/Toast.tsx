@@ -18,7 +18,7 @@ export function Toast({ container }: ToastProps) {
         position: 'fixed',
         left: 0,
         right: 0,
-        bottom: `calc(env(safe-area-inset-bottom, 0px) + ${toRem(24)})`,
+        bottom: `calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + ${toRem(24)})`,
         display: 'flex',
         justifyContent: 'center',
         pointerEvents: 'none',

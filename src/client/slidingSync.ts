@@ -34,13 +34,9 @@ const debugLog = createDebugLogger('slidingSync');
 
 const LIST_JOINED = 'joined';
 const LIST_INVITES = 'invites';
-const LIST_UPDATES = 'updates';
 const LIST_TIMELINE_LIMIT = 1;
 const LIST_PAGE_SIZE = 30;
-const STEADY_STATE_DETAILED_ROOMS = 3;
 const DEFAULT_POLL_TIMEOUT_MS = 45000;
-
-const LIST_SORT_ORDER = ['by_recency', 'by_name'];
 
 const ACTIVE_ROOM_SUBSCRIPTION_KEY = 'active_room';
 const SIDEBAR_ROOM_SUBSCRIPTION_KEY = 'sidebar_room';
@@ -59,7 +55,6 @@ type OptimisticJoin = {
 
 export type PartialSlidingSyncRequest = {
   filters?: MSC3575List['filters'];
-  sort?: string[];
   ranges?: [number, number][];
 };
 
@@ -147,8 +142,9 @@ const buildSelfJoinEvent = (
   };
 };
 
+// The wildcard state key makes Synapse fall back to StateFilter.all() and return
+// the room's whole state on the initial send, so this is not as cheap as it looks.
 const buildListRequiredState = (): MSC3575RoomSubscription['required_state'] => [
-  // first sync limited solely to what's needed to render rooms
   [EventType.RoomAvatar, ''],
   [EventType.RoomTombstone, ''],
   [EventType.RoomEncryption, ''],
@@ -242,7 +238,6 @@ const buildLists = (): Map<string, MSC3575List> => {
 
   lists.set(LIST_JOINED, {
     ranges: [[0, LIST_PAGE_SIZE - 1]],
-    sort: LIST_SORT_ORDER,
     timeline_limit: LIST_TIMELINE_LIMIT,
     required_state: listRequiredState,
     filters: { is_invite: false },
@@ -250,18 +245,9 @@ const buildLists = (): Map<string, MSC3575List> => {
 
   lists.set(LIST_INVITES, {
     ranges: [[0, LIST_PAGE_SIZE - 1]],
-    sort: LIST_SORT_ORDER,
     timeline_limit: LIST_TIMELINE_LIMIT,
     required_state: listRequiredState,
     filters: { is_invite: true },
-  });
-
-  lists.set(LIST_UPDATES, {
-    ranges: [[0, LIST_PAGE_SIZE - 1]],
-    sort: LIST_SORT_ORDER,
-    timeline_limit: LIST_TIMELINE_LIMIT,
-    required_state: [[EventType.RoomMember, MSC3575_STATE_KEY_ME]],
-    filters: { is_invite: false },
   });
 
   return lists;
@@ -278,21 +264,38 @@ type RoomScopedExtension = {
   rooms?: string[];
 };
 
-export const scopeEphemeralExtensions = (
+// Receipts stay unscoped on purpose: they drive unread state for every room in
+// the sidebar, and a room that never receives one reads as permanently unread.
+export const scopeTypingExtension = (
   extensions: object | undefined,
   roomIds: readonly string[]
 ): void => {
   if (!extensions) return;
-  const extensionMap = extensions as Record<string, unknown>;
 
-  ['typing', 'receipts'].forEach((name) => {
-    const extension = extensionMap[name];
-    if (!extension || typeof extension !== 'object') return;
+  const typing = (extensions as Record<string, unknown>).typing;
+  if (!typing || typeof typing !== 'object') return;
 
-    const scopedExtension = extension as RoomScopedExtension;
-    scopedExtension.lists = [];
-    scopedExtension.rooms = [...roomIds];
-  });
+  const scopedTyping = typing as RoomScopedExtension;
+  scopedTyping.lists = [];
+  scopedTyping.rooms = [...roomIds];
+};
+
+type ExpandedTimelineRoomData = MSC3575RoomData & { unstable_expanded_timeline?: boolean };
+
+// Synapse flags history re-sent for a raised timeline_limit only as
+// `unstable_expanded_timeline`, but the SDK reconciles a gap on `limited`/`initial`,
+// so without this it appends that history after the newest event. Drop once the SDK
+// reads the flag.
+export const markExpandedTimelinesLimited = (resp: MSC3575SlidingSyncResponse | null): void => {
+  if (!resp?.rooms) return;
+
+  for (const roomData of Object.values(resp.rooms)) {
+    const expanded = roomData as ExpandedTimelineRoomData;
+    // Without a token the SDK would clear the back-pagination token.
+    if (expanded.unstable_expanded_timeline === true && typeof expanded.prev_batch === 'string') {
+      expanded.limited = true;
+    }
+  }
 };
 
 export class SlidingSyncManager {
@@ -531,7 +534,7 @@ export class SlidingSyncManager {
         const currentCount = listData?.joinedCount ?? 0;
         const previousCount = this.previousListCounts.get(key) ?? 0;
 
-        if (key !== LIST_UPDATES) totalRoomCount += currentCount;
+        totalRoomCount += currentCount;
 
         if (currentCount !== previousCount) {
           changes[key] = {
@@ -583,6 +586,7 @@ export class SlidingSyncManager {
       }
 
       this.expandListsByPage();
+      this.ensureListCoverage();
 
       Sentry.metrics.distribution('sable.sync.processing_ms', syncDuration, {
         attributes: { transport: 'sliding' },
@@ -620,11 +624,10 @@ export class SlidingSyncManager {
       if (member.membership !== KnownMembership.Leave && member.membership !== KnownMembership.Ban)
         return;
       this.sidebarCache.removeRoom(member.roomId);
-      const removedSpaceSubscription = this.spaceSubscriptions.delete(member.roomId);
-      const removedSidebarSubscription = this.sidebarRoomSubscriptions.delete(member.roomId);
+      const removedPassiveSubscription = this.removePassiveSubscriptions(member.roomId);
       if (this.activeRoomSubscriptions.has(member.roomId)) {
         this.unsubscribeFromRoom(member.roomId);
-      } else if (removedSpaceSubscription || removedSidebarSubscription) {
+      } else if (removedPassiveSubscription) {
         this.queueRoomSubscriptionSync();
       }
     };
@@ -937,7 +940,6 @@ export class SlidingSyncManager {
         this.hydrationStatusListeners.forEach((listener) => listener(false));
         this.reconcileSidebarCacheMembership();
         globalThis.setTimeout(() => this.flushDeferredSubscriptions(), 0);
-        this.applySteadyStateListRanges();
         log.log(`Sliding Sync all lists fully loaded for ${this.mx.getUserId()}`);
         const totalRooms =
           (this.slidingSync.getListData(LIST_JOINED)?.joinedCount ?? 0) +
@@ -979,31 +981,23 @@ export class SlidingSyncManager {
     }
   }
 
-  private applySteadyStateListRanges(): void {
-    const joinedList = this.slidingSync.getListParams(LIST_JOINED);
-    const currentEnd = getListEndIndex(joinedList);
-    const steadyStateEnd = Math.min(currentEnd, STEADY_STATE_DETAILED_ROOMS - 1);
-    if (steadyStateEnd < 0 || steadyStateEnd === currentEnd) return;
+  // Paging stops once every list is covered, but the counts keep growing. A state
+  // change does not bump a room, so a room joined mid-session would otherwise sit
+  // outside the window and stop receiving state deltas until the next restart.
+  private ensureListCoverage(): void {
+    if (!this.initialListHydrationCompleted) return;
 
-    const joinedCount = this.slidingSync.getListData(LIST_JOINED)?.joinedCount ?? 0;
-    const updatesCount = this.slidingSync.getListData(LIST_UPDATES)?.joinedCount ?? 0;
-    const updatesConfirmedEnd = this.confirmedListRangeEnds.get(LIST_UPDATES) ?? -1;
-    if (updatesCount !== joinedCount || updatesConfirmedEnd < joinedCount - 1) {
-      debugLog.warn('sync', 'Kept detailed joined list fully covered: updates list unavailable', {
-        joinedCount,
-        updatesCount,
-        updatesConfirmedEnd,
+    this.listKeys.forEach((key) => {
+      const knownCount = this.slidingSync.getListData(key)?.joinedCount ?? 0;
+      const desiredEnd = knownCount - 1;
+      if (desiredEnd <= getListEndIndex(this.slidingSync.getListParams(key))) return;
+
+      this.slidingSync.setListRanges(key, [[0, desiredEnd]]);
+      this.requestedListRangeEnds.set(key, desiredEnd);
+      debugLog.info('sync', `Extended list "${key}" to cover newly joined rooms`, {
+        list: key,
+        newEnd: desiredEnd,
       });
-      return;
-    }
-
-    this.slidingSync.setListRanges(LIST_JOINED, [[0, steadyStateEnd]]);
-    this.requestedListRangeEnds.set(LIST_JOINED, steadyStateEnd);
-    debugLog.info('sync', 'Reduced detailed joined list to steady-state window', {
-      previousEnd: currentEnd,
-      newEnd: steadyStateEnd,
-      retainedDetailedRooms: steadyStateEnd + 1,
-      updatesCoverageEnd: updatesConfirmedEnd,
     });
   }
 
@@ -1012,7 +1006,6 @@ export class SlidingSyncManager {
     if (!list) {
       list = {
         ranges: [[0, LIST_PAGE_SIZE - 1]],
-        sort: LIST_SORT_ORDER,
         timeline_limit: LIST_TIMELINE_LIMIT,
         required_state: buildListRequiredState(),
         ...updateArgs,
@@ -1275,15 +1268,24 @@ export class SlidingSyncManager {
     if (membership === KnownMembership.Leave) {
       this.optimisticallyJoinedRoomIds.delete(roomId);
       this.sidebarCache.removeRoom(roomId);
-      const removedSpaceSubscription = this.spaceSubscriptions.delete(roomId);
-      const removedSidebarSubscription = this.sidebarRoomSubscriptions.delete(roomId);
+      const removedPassiveSubscription = this.removePassiveSubscriptions(roomId);
       if (this.activeRoomSubscriptions.has(roomId)) {
         this.unsubscribeFromRoom(roomId);
-      } else if (removedSpaceSubscription || removedSidebarSubscription) {
+      } else if (removedPassiveSubscription) {
         this.queueRoomSubscriptionSync();
       }
       this.mx.store.removeRoom(roomId);
     }
+  }
+
+  // Includes the deferred sets so a later flush cannot resubscribe a room we left.
+  private removePassiveSubscriptions(roomId: string): boolean {
+    const removedSpace = this.spaceSubscriptions.delete(roomId);
+    const removedSidebar = this.sidebarRoomSubscriptions.delete(roomId);
+    const removedImagePack = this.imagePackRoomSubscriptions.delete(roomId);
+    this.deferredSpaceSubscriptions.delete(roomId);
+    this.deferredImagePackSubscriptions?.delete(roomId);
+    return removedSpace || removedSidebar || removedImagePack;
   }
 
   private flushDeferredSubscriptions(): void {

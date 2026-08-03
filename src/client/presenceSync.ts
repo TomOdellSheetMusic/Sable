@@ -76,6 +76,9 @@ export class PresenceSyncManager {
     this.abortController?.abort();
   }
 
+  // MSC4186 has no presence extension and a filter cannot exclude to_device, so this
+  // poll drains the same per-device queue as the to_device extension. Dropping these
+  // would lose room keys.
   private async processCrypto(response: PresenceSyncResponse): Promise<void> {
     const crypto = this.mx.getCrypto() as CryptoBackend | undefined;
     if (!crypto) return;

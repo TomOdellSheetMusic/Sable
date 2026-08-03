@@ -226,7 +226,7 @@ export const RoomPinMenu = forwardRef<HTMLDivElement, RoomPinMenuProps>(
       });
     }, [pinListKey, totalSize]);
     const currentLatchedSize = latchedSize.pinListKey === pinListKey ? latchedSize.size : totalSize;
-    const mobileMaxHeight = 'calc(85vh - 4rem)';
+    const mobileMaxHeight = 'calc(85dvh - 4rem)';
 
     const renderMatrixEvent = useRoomMessagePreviewRenderer(room);
 

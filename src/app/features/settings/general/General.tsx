@@ -94,7 +94,7 @@ function DateHint({ hasChanges, handleReset }: Readonly<DateHintProps>) {
             escapeDeactivates: stopPropagation,
           }}
         >
-          <Menu style={{ maxHeight: '85vh', overflowY: 'auto' }}>
+          <Menu style={{ maxHeight: '85dvh', overflowY: 'auto' }}>
             <Header size="300" style={{ padding: `0 ${config.space.S200}` }}>
               <Text size="L400">Formatting</Text>
             </Header>

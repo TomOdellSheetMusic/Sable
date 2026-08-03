@@ -3,7 +3,7 @@ import { config, toRem } from 'folds';
 
 export const DialogContent = style({
   width: `min(90vw, ${toRem(400)})`,
-  maxHeight: '85vh',
+  maxHeight: '85dvh',
   display: 'flex',
   flexDirection: 'column',
 });

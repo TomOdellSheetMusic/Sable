@@ -120,7 +120,7 @@ export const MessageMobileOptionsContainer = style({
   right: 0,
   zIndex: 1005,
   width: '100%',
-  maxHeight: '85vh',
+  maxHeight: '85dvh',
   display: 'flex',
   flexDirection: 'column',
   justifyContent: 'flex-end',
@@ -145,9 +145,9 @@ export const MessageMobileSheetFill = style({
 
 // Ratio is against the keyboard-free height so the picker keeps one size while
 // typing. The ceiling only binds where a keyboard would otherwise cover the sheet.
-const pickerHeight = `min(max(calc(var(--mobile-sheet-viewport, 100vh) * 0.5), ${toRem(
+const pickerHeight = `min(max(calc(var(--mobile-sheet-viewport, 100dvh) * 0.5), ${toRem(
   280
-)}), var(--mobile-sheet-visible, 100vh))`;
+)}), var(--mobile-sheet-visible, 100dvh))`;
 
 export const MessageMobileOptionsContainerPicker = style({
   height: pickerHeight,

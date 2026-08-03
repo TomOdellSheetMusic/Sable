@@ -184,7 +184,7 @@ export function SettingMenuSelector<T extends string | number>({
         menu={
           <Menu
             style={
-              scrollable ? { maxHeight: '75vh', maxWidth: toRem(300), display: 'flex' } : undefined
+              scrollable ? { maxHeight: '75dvh', maxWidth: toRem(300), display: 'flex' } : undefined
             }
           >
             {optionsContent}

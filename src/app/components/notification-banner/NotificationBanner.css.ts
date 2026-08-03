@@ -116,12 +116,12 @@ export const BannerSubtitle = style({
 // Desktop: 25vh, mobile (≤768px): 35vh.
 export const BannerBody = style({
   position: 'relative',
-  maxHeight: '25vh',
+  maxHeight: '25dvh',
   overflow: 'hidden',
 
   '@media': {
     '(max-width: 768px)': {
-      maxHeight: '35vh',
+      maxHeight: '35dvh',
     },
   },
 

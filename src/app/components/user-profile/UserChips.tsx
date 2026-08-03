@@ -477,7 +477,7 @@ export function MutualRoomsChip({
             style={{
               display: 'flex',
               maxWidth: toRem(200),
-              maxHeight: '80vh',
+              maxHeight: '80dvh',
               backgroundColor: innerColor,
             }}
           >

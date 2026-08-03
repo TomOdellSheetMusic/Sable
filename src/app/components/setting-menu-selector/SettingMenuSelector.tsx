@@ -4,6 +4,7 @@ import { Box, Button, config, Menu, MenuItem, Scroll, Spinner, Text, toRem } fro
 import { CaretDown, sizedIcon } from '$components/icons/phosphor';
 import {
   type ComponentPropsWithoutRef,
+  type CSSProperties,
   type MouseEventHandler,
   type ReactNode,
   useState,
@@ -47,6 +48,7 @@ export type SettingMenuSelectorProps<T extends string | number> = {
   align?: MenuAlign;
   offset?: number;
   scrollable?: boolean;
+  optionStyle?: CSSProperties;
   renderTrigger?: (args: SettingMenuRenderTriggerArgs<T>) => ReactNode;
   renderOption?: (args: SettingMenuRenderOptionArgs<T>) => ReactNode;
 };
@@ -61,6 +63,7 @@ export function SettingMenuSelector<T extends string | number>({
   align = 'End',
   offset = 5,
   scrollable = false,
+  optionStyle,
   renderTrigger,
   renderOption,
 }: SettingMenuSelectorProps<T>) {
@@ -100,6 +103,7 @@ export function SettingMenuSelector<T extends string | number>({
           aria-selected={selected}
           disabled={option.disabled || isDisabled}
           onClick={select}
+          style={optionStyle}
         >
           {renderOption({ option, selected, select })}
         </MenuItem>
@@ -116,6 +120,7 @@ export function SettingMenuSelector<T extends string | number>({
         disabled={option.disabled || isDisabled}
         onClick={select}
         before={option.icon}
+        style={optionStyle}
       >
         <Box grow="Yes">
           <Box direction="Column" gap="100">

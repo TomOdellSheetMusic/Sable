@@ -112,6 +112,7 @@ export const settingsLinkFocusIdsBySection: Record<SettingsSectionId, readonly s
     'enable-pmp-picker',
   ],
   appearance: [
+    'app-icon',
     'autoplay-emojis',
     'old-sidebar',
     'autoplay-gifs',

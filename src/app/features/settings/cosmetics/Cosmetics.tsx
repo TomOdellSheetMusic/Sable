@@ -14,6 +14,7 @@ import { SettingTile, SettingToggle } from '$components/setting-tile';
 import { stopPropagation } from '$utils/keyboard';
 import { Appearance } from './Themes';
 import { LanguageSpecificPronouns } from './LanguageSpecificPronouns';
+import { AppIconSettings } from './AppIconSettings';
 
 function PronounPillMaxCountInput({ disabled }: { disabled: boolean }) {
   const [maxCount, setMaxCount] = useSetting(settingsAtom, 'pronounPillMaxCount');
@@ -556,6 +557,7 @@ export function Cosmetics({ requestBack, requestClose }: CosmeticsProps) {
               {!themeBrowserOpen && (
                 <>
                   <IdentityCosmetics />
+                  <AppIconSettings />
                   <IconSizeSettings />
                   <JumboEmoji />
                   <Privacy />

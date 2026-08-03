@@ -451,7 +451,13 @@ export function useTimelineSync({
   const resetAutoScrollPendingRef = useRef(false);
   const pendingAutoScrollBehaviorRef = useRef<'instant' | 'smooth' | undefined>(undefined);
 
-  const eventsLength = getTimelinesEventsCount(timeline.linkedTimelines);
+  let pendingEvents: MatrixEvent[] = [];
+  try {
+    pendingEvents = room.getPendingEvents();
+  } catch {
+    // Tests and clients created before this option use chronological ordering.
+  }
+  const eventsLength = getTimelinesEventsCount(timeline.linkedTimelines) + pendingEvents.length;
   const liveTimelineLinked = timeline.linkedTimelines.at(-1) === getLiveTimeline(room);
 
   const canPaginateBack =
@@ -672,6 +678,7 @@ export function useTimelineSync({
     timeline,
     setTimeline,
     eventsLength,
+    pendingEvents,
     liveTimelineLinked,
     canPaginateBack,
     backwardStatus,

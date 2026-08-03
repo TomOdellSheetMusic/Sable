@@ -21,6 +21,7 @@ import { M_POLL_START } from 'matrix-js-sdk';
 export interface UseProcessedTimelineOptions {
   items: number[];
   linkedTimelines: EventTimeline[];
+  pendingEvents?: MatrixEvent[];
   ignoredUsersSet: Set<string>;
   hiddenEvents: ResolvedHiddenEventSettings;
   mxUserId: string | null;
@@ -112,12 +113,17 @@ type TimelineEventEntry = {
   timelineSet: EventTimelineSet;
 };
 
-const flattenTimelineEvents = (linkedTimelines: EventTimeline[]): TimelineEventEntry[] => {
+const flattenTimelineEvents = (
+  linkedTimelines: EventTimeline[],
+  pendingEvents: MatrixEvent[]
+): TimelineEventEntry[] => {
   const entries: TimelineEventEntry[] = [];
   linkedTimelines.forEach((timeline) => {
     const timelineSet = timeline.getTimelineSet();
     timeline.getEvents().forEach((mEvent) => entries.push({ mEvent, timelineSet }));
   });
+  const timelineSet = linkedTimelines.at(-1)?.getTimelineSet();
+  if (timelineSet) pendingEvents.forEach((mEvent) => entries.push({ mEvent, timelineSet }));
   return entries;
 };
 
@@ -569,6 +575,7 @@ type ProcessingCache = {
 export function useProcessedTimeline({
   items,
   linkedTimelines,
+  pendingEvents = [],
   ignoredUsersSet,
   hiddenEvents,
   mxUserId,
@@ -592,7 +599,7 @@ export function useProcessedTimeline({
   const cacheRef = useRef<ProcessingCache>();
 
   return useMemo(() => {
-    const timelineEvents = flattenTimelineEvents(linkedTimelines);
+    const timelineEvents = flattenTimelineEvents(linkedTimelines, pendingEvents);
     const processingOptions: TimelineProcessingOptions = {
       ignoredUsersSet,
       showHiddenEvents,
@@ -711,6 +718,7 @@ export function useProcessedTimeline({
   }, [
     items,
     linkedTimelines,
+    pendingEvents,
     ignoredUsersSet,
     showHiddenEvents,
     showTombstoneEvents,

@@ -45,8 +45,8 @@ const makeMx = (events: MatrixEvent[], readUpTo: string | null) => {
   };
 };
 
-// The live timeline is in timeline order by contract, so the newest event is last.
-// Ordering defects belong in markExpandedTimelinesLimited, not here.
+// The live timeline is in timeline order, so the newest event is last. Ordering
+// defects belong in the sliding-sync layer, not here.
 describe('markAsRead', () => {
   it('marks read up to the last event in the timeline', async () => {
     const { mx, setRoomReadMarkers, sendReadReceipt } = makeMx(

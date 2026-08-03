@@ -5,8 +5,8 @@ import type { Logger } from 'matrix-js-sdk/lib/logger';
 import { createClient, EventTimeline } from '$types/matrix-sdk';
 import { markExpandedTimelinesLimited } from './slidingSync';
 
-// Drives the real matrix-js-sdk room-data path, so this pins the SDK's actual gap
-// reconciliation rather than our assumptions about it.
+// Drives the real matrix-js-sdk room-data path, pinning the SDK's actual behaviour
+// rather than our assumptions about it.
 
 const userId = '@me:example.com';
 const roomId = '!dm:example.com';

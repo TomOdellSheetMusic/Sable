@@ -63,7 +63,10 @@ describe('supportsSlidingSync', () => {
   it('reports support when the homeserver advertises simplified sliding sync', async () => {
     const check = vi.fn<(feature: string) => Promise<boolean>>().mockResolvedValue(true);
 
-    await expect(supportsSlidingSync(makeMx(check), baseUrl)).resolves.toBe(true);
+    await expect(supportsSlidingSync(makeMx(check), baseUrl)).resolves.toEqual({
+      supported: true,
+      reason: 'advertised',
+    });
     expect(check).toHaveBeenCalledWith('org.matrix.simplified_msc3575');
   });
 
@@ -73,17 +76,18 @@ describe('supportsSlidingSync', () => {
         makeMx(() => Promise.resolve(false)),
         baseUrl
       )
-    ).resolves.toBe(false);
+    ).resolves.toEqual({ supported: false, reason: 'unadvertised' });
   });
 
   // Classic sync still works; opting in against a server that cannot serve it does not.
+  // The reason must stay distinguishable: we never established the server's answer.
   it('falls back to classic sync when the capability was never confirmed', async () => {
     await expect(
       supportsSlidingSync(
         makeMx(() => Promise.reject(new Error('offline'))),
         baseUrl
       )
-    ).resolves.toBe(false);
+    ).resolves.toEqual({ supported: false, reason: 'unknown' });
   });
 
   it('keeps sliding sync when a previously confirmed capability is cached', async () => {
@@ -94,7 +98,7 @@ describe('supportsSlidingSync', () => {
         makeMx(() => Promise.reject(new Error('offline'))),
         baseUrl
       )
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ supported: true, reason: 'cached' });
   });
 
   it('does not resurrect sliding sync from a cached negative', async () => {
@@ -105,6 +109,6 @@ describe('supportsSlidingSync', () => {
         makeMx(() => Promise.reject(new Error('offline'))),
         baseUrl
       )
-    ).resolves.toBe(false);
+    ).resolves.toEqual({ supported: false, reason: 'unknown' });
   });
 });

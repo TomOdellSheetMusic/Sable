@@ -113,7 +113,7 @@ export const revalidateVersionsCache = async (
   }
 };
 
-/** Separates "the server does not support this" from "we could not ask". */
+/** True only when a cached /versions payload advertised the feature. */
 export const wasUnstableFeatureCached = (
   baseUrl: string,
   userId: string,

@@ -284,8 +284,7 @@ type ExpandedTimelineRoomData = MSC3575RoomData & { unstable_expanded_timeline?:
 
 // Synapse flags history re-sent for a raised timeline_limit only as
 // `unstable_expanded_timeline`, but the SDK reconciles a gap on `limited`/`initial`,
-// so without this it appends that history after the newest event. Drop once the SDK
-// reads the flag.
+// so without this it lands after the newest event. Drop once the SDK reads the flag.
 export const markExpandedTimelinesLimited = (resp: MSC3575SlidingSyncResponse | null): void => {
   if (!resp?.rooms) return;
 
@@ -981,9 +980,8 @@ export class SlidingSyncManager {
     }
   }
 
-  // Paging stops once every list is covered, but the counts keep growing. A state
-  // change does not bump a room, so a room joined mid-session would otherwise sit
-  // outside the window and stop receiving state deltas until the next restart.
+  // Paging stops once every list is covered, but the counts keep growing, and a state
+  // change does not bump a room back into the window.
   private ensureListCoverage(): void {
     if (!this.initialListHydrationCompleted) return;
 

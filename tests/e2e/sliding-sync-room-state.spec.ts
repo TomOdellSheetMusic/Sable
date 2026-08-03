@@ -46,7 +46,8 @@ async function loginAsFreshUser(
 }
 
 test.describe('sliding sync room state', () => {
-  // Regression guard for #1161 / #1389.
+  // Regression guard for #1389: reintroducing the post-hydration narrowing of the
+  // joined list fails this. Rooms outside the server's own window are not covered.
   test('applies a rename to a room that is neither open nor recently active', async ({
     page,
   }, testInfo) => {
@@ -81,7 +82,15 @@ test.describe('sliding sync room state', () => {
       await sendText(hsBaseUrl, user.accessToken, active[i]!, `${tag}-bump-${i}`, i + 1);
     }
 
+    // Proves the client chose sliding sync and the homeserver accepted the request.
+    const slidingSyncAccepted = page.waitForResponse(
+      (response) =>
+        response.url().includes('/org.matrix.simplified_msc3575/sync') && response.status() === 200,
+      { timeout: CLIENT_READY_TIMEOUT }
+    );
+
     await page.goto('/');
+    await slidingSyncAccepted;
     await expect(app.room(staleName)).toBeVisible({ timeout: CLIENT_READY_TIMEOUT });
 
     // An active subscription would fetch state regardless of the list config.

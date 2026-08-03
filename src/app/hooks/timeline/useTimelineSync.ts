@@ -454,9 +454,7 @@ export function useTimelineSync({
   let pendingEvents: MatrixEvent[] = [];
   try {
     pendingEvents = room.getPendingEvents();
-  } catch {
-    // Tests and clients created before this option use chronological ordering.
-  }
+  } catch {}
   const eventsLength = getTimelinesEventsCount(timeline.linkedTimelines) + pendingEvents.length;
   const liveTimelineLinked = timeline.linkedTimelines.at(-1) === getLiveTimeline(room);
 

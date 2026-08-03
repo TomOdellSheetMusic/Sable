@@ -113,6 +113,13 @@ export const revalidateVersionsCache = async (
   }
 };
 
+/** Separates "the server does not support this" from "we could not ask". */
+export const wasUnstableFeatureCached = (
+  baseUrl: string,
+  userId: string,
+  feature: string
+): boolean => readCache(baseUrl, userId)?.unstable_features?.[feature] === true;
+
 /** Clear the cached versions for a session (used on logout). */
 export const clearCachedVersions = (baseUrl: string, userId: string): void => {
   try {

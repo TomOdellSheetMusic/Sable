@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MatrixClient } from '$types/matrix-sdk';
 import type { Session } from '$state/sessions';
 import { ACTIVE_SESSION_KEY, MATRIX_SESSIONS_KEY } from '$state/sessions';
-import { ownsActiveMediaSession } from './initMatrix';
+import { newSlidingSyncConnId, ownsActiveMediaSession, supportsSlidingSync } from './initMatrix';
 
 const alice = { userId: '@alice:example.org' } as Session;
 const bob = { userId: '@bob:example.org' } as Session;
@@ -22,5 +23,88 @@ describe('ownsActiveMediaSession', () => {
     localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(alice.userId));
 
     expect(ownsActiveMediaSession(alice)).toBe(true);
+  });
+});
+
+describe('newSlidingSyncConnId', () => {
+  it('gives every client instance its own id', () => {
+    const ids = new Set(Array.from({ length: 50 }, () => newSlidingSyncConnId()));
+
+    expect(ids.size).toBe(50);
+  });
+});
+
+describe('supportsSlidingSync', () => {
+  const baseUrl = 'https://matrix.example.org';
+  const versionsKey = `sable.versionsCache.${baseUrl}|${alice.userId}`;
+
+  const makeMx = (
+    doesServerSupportUnstableFeature: (feature: string) => Promise<boolean>
+  ): MatrixClient =>
+    ({
+      doesServerSupportUnstableFeature,
+      getSafeUserId: () => alice.userId,
+    }) as unknown as MatrixClient;
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  const cacheFeature = (supported: boolean) =>
+    localStorage.setItem(
+      versionsKey,
+      JSON.stringify({
+        versions: [],
+        unstable_features: { 'org.matrix.simplified_msc3575': supported },
+        fetchedAt: Date.now(),
+      })
+    );
+
+  it('reports support when the homeserver advertises simplified sliding sync', async () => {
+    const check = vi.fn<(feature: string) => Promise<boolean>>().mockResolvedValue(true);
+
+    await expect(supportsSlidingSync(makeMx(check), baseUrl)).resolves.toBe(true);
+    expect(check).toHaveBeenCalledWith('org.matrix.simplified_msc3575');
+  });
+
+  it('reports no support when the homeserver does not advertise it', async () => {
+    await expect(
+      supportsSlidingSync(
+        makeMx(() => Promise.resolve(false)),
+        baseUrl
+      )
+    ).resolves.toBe(false);
+  });
+
+  // Classic sync still works; opting in against a server that cannot serve it does not.
+  it('falls back to classic sync when the capability was never confirmed', async () => {
+    await expect(
+      supportsSlidingSync(
+        makeMx(() => Promise.reject(new Error('offline'))),
+        baseUrl
+      )
+    ).resolves.toBe(false);
+  });
+
+  it('keeps sliding sync when a previously confirmed capability is cached', async () => {
+    cacheFeature(true);
+
+    await expect(
+      supportsSlidingSync(
+        makeMx(() => Promise.reject(new Error('offline'))),
+        baseUrl
+      )
+    ).resolves.toBe(true);
+  });
+
+  it('does not resurrect sliding sync from a cached negative', async () => {
+    cacheFeature(false);
+
+    await expect(
+      supportsSlidingSync(
+        makeMx(() => Promise.reject(new Error('offline'))),
+        baseUrl
+      )
+    ).resolves.toBe(false);
   });
 });

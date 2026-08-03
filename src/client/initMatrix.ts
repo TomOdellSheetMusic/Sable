@@ -32,7 +32,11 @@ import { assertAuthMetadataIssuer, createSessionTokenRefresher } from './oidcTok
 import { revokeOAuthToken } from './oauthTokenRevocation';
 import { clearSecretStorageKeys, cryptoCallbacks } from './secretStorageKeys';
 import type { SlidingSyncDiagnostics } from './slidingSync';
-import { scopeEphemeralExtensions, SlidingSyncManager } from './slidingSync';
+import {
+  markExpandedTimelinesLimited,
+  scopeTypingExtension,
+  SlidingSyncManager,
+} from './slidingSync';
 import { PresenceSyncManager } from './presenceSync';
 import { SlidingSyncSidebarCache } from './slidingSyncSidebarCache';
 import { clearCachedUserProfiles } from './userProfileCache';
@@ -41,6 +45,7 @@ import {
   revalidateVersionsCache,
   clearCachedVersions,
   cacheVersionsFromClient,
+  wasUnstableFeatureCached,
 } from './versionsCache';
 
 const log = createLogger('initMatrix');
@@ -139,24 +144,29 @@ type SlidingSyncRequestWithConnId = MSC3575SlidingSyncRequest & {
   conn_id?: string;
 };
 
-const SLIDING_SYNC_CONN_ID = 'sable-main';
+// Synapse keys connection state on (user, device, conn_id) and keeps only the two
+// latest positions, so two clients sharing an id invalidate each other's `pos`.
+export const newSlidingSyncConnId = (): string =>
+  `sable-${globalThis.crypto?.randomUUID?.().slice(0, 8) ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
 
 function installSlidingSyncRequestPatch(mx: MatrixClient, manager: SlidingSyncManager): void {
   slidingSyncRequestCleanupByClient.get(mx)?.();
 
+  const connId = newSlidingSyncConnId();
   const mxWritable = mx as MatrixClientWithWritableSlidingSync;
   const original = mx.slidingSync.bind(mx) as SlidingSyncMethod;
   mxWritable.slidingSync = async (reqBody, baseUrl, abortSignal) => {
     const req = reqBody as SlidingSyncRequestWithConnId;
     if (req.conn_id === undefined) {
-      req.conn_id = SLIDING_SYNC_CONN_ID;
+      req.conn_id = connId;
     }
 
     const roomIds = manager.getActiveRoomSubscriptionIds();
-    scopeEphemeralExtensions(req.extensions, roomIds);
+    scopeTypingExtension(req.extensions, roomIds);
 
     // Must run before the SDK processes the response.
     const response = await original(reqBody, baseUrl, abortSignal);
+    markExpandedTimelinesLimited(response);
     manager.sanitizeOptimisticJoinResponse(response);
     return response;
   };
@@ -365,6 +375,34 @@ export type ClientSyncDiagnostics = {
   sliding?: SlidingSyncDiagnostics;
 };
 
+const SLIDING_SYNC_UNSTABLE_FEATURE = 'org.matrix.simplified_msc3575';
+
+const SLIDING_SYNC_CAPABILITY_TIMEOUT_MS = 5000;
+
+// The SDK retries an unsupported sync endpoint forever instead of erroring, so an
+// unconfirmed capability falls back to classic sync. A cached confirmation keeps
+// sliding sync through one bad lookup. /versions has no timeout of its own.
+export const supportsSlidingSync = async (mx: MatrixClient, baseUrl: string): Promise<boolean> => {
+  const timeout = new Promise<boolean | undefined>((resolve) => {
+    globalThis.setTimeout(() => resolve(undefined), SLIDING_SYNC_CAPABILITY_TIMEOUT_MS);
+  });
+
+  let confirmed: boolean | undefined;
+  try {
+    confirmed = await Promise.race([
+      mx.doesServerSupportUnstableFeature(SLIDING_SYNC_UNSTABLE_FEATURE),
+      timeout,
+    ]);
+  } catch {
+    confirmed = undefined;
+  }
+
+  return (
+    confirmed ??
+    wasUnstableFeatureCached(baseUrl, mx.getSafeUserId(), SLIDING_SYNC_UNSTABLE_FEATURE)
+  );
+};
+
 const disposeSlidingSync = (mx: MatrixClient): void => {
   membershipActionCleanupByClient.get(mx)?.();
   const manager = slidingSyncByClient.get(mx);
@@ -428,7 +466,15 @@ export const startClient = async (mx: MatrixClient, config?: StartClientConfig):
   disposePresenceSync(mx);
 
   const baseUrl = config?.baseUrl ?? mx.baseUrl;
-  const useSliding = config?.sessionSlidingSyncOptIn === true;
+  const optedIntoSliding = config?.sessionSlidingSyncOptIn === true;
+  const useSliding = optedIntoSliding && (await supportsSlidingSync(mx, baseUrl));
+
+  if (optedIntoSliding && !useSliding) {
+    debugLog.warn('sync', 'Homeserver does not support sliding sync; using classic sync', {
+      userId: mx.getUserId(),
+      baseUrl,
+    });
+  }
 
   debugLog.info('sync', 'Starting Matrix client', { userId: mx.getUserId() });
 

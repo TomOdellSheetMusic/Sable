@@ -40,3 +40,9 @@ export const useScreenSizeContext = (): ScreenSize => {
   }
   return screenSize;
 };
+
+/** Tablet as well as Mobile, for touch presentation rather than available width. */
+export const useCompactLayout = (): boolean => {
+  const screenSize = useContext(ScreenSizeContext);
+  return screenSize !== null && screenSize !== ScreenSize.Desktop;
+};

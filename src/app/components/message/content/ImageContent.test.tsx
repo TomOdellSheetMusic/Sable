@@ -7,6 +7,7 @@ const screenMocks = vi.hoisted(() => ({ isMobile: true, tauri: false }));
 vi.mock('$hooks/useScreenSize', () => ({
   ScreenSize: { Desktop: 'Desktop', Tablet: 'Tablet', Mobile: 'Mobile' },
   useScreenSizeOptionally: () => (screenMocks.isMobile ? 'Mobile' : 'Desktop'),
+  useCompactLayout: () => screenMocks.isMobile,
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({

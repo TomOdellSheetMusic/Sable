@@ -63,6 +63,7 @@ vi.mock('$hooks/useScreenSize', () => ({
   ScreenSize: { Desktop: 'Desktop', Tablet: 'Tablet', Mobile: 'Mobile' },
   useScreenSizeContext: () => (screenMocks.isMobile ? 'Mobile' : 'Desktop'),
   useScreenSizeOptionally: () => (screenMocks.isMobile ? 'Mobile' : 'Desktop'),
+  useCompactLayout: () => screenMocks.isMobile,
 }));
 
 const renderViewer = (props: { alt?: string; src?: string; info?: IImageInfo } = {}) =>

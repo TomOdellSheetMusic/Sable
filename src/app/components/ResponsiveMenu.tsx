@@ -2,7 +2,7 @@ import type { ComponentProps, CSSProperties, ReactNode } from 'react';
 import type { RectCords } from 'folds';
 import { Box, Overlay, OverlayBackdrop, OverlayCenter, PopOut } from 'folds';
 import FocusTrap from 'focus-trap-react';
-import { ScreenSize, useScreenSizeOptionally } from '$hooks/useScreenSize';
+import { useCompactLayout } from '$hooks/useScreenSize';
 import { stopPropagation } from '$utils/keyboard';
 import { useDismissOnBack } from '$utils/androidBack';
 import { MobileSheetFocusTrap, MobileSwipeDownModal } from './MobileSwipeDownModal';
@@ -76,8 +76,7 @@ export function ResponsiveMenu({
   mobile = 'sheet',
   surfaceColor,
 }: ResponsiveMenuProps) {
-  // Null outside a provider, where desktop is the safe assumption.
-  const isMobile = useScreenSizeOptionally() === ScreenSize.Mobile;
+  const isMobile = useCompactLayout();
 
   const isKeyForward = (evt: KeyboardEvent) =>
     evt.key === 'ArrowDown' || (arrowNavigation === 'both' && evt.key === 'ArrowRight');

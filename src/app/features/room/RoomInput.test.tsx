@@ -41,6 +41,8 @@ const testState = vi.hoisted(() => ({
   handleFiles: undefined as ((files: File[]) => Promise<void>) | undefined,
   safeUploadFile: vi.fn(),
   encryptFile: vi.fn(),
+  accountPersonaSelection: undefined as any,
+  roomPersonaSelection: undefined as any,
   editingEvent: undefined as
     | { getId: () => string; getContent: () => Record<string, unknown> }
     | undefined,
@@ -372,8 +374,17 @@ vi.mock('$hooks/useImagePackRooms', () => ({ useImagePackRooms: () => [] }));
 vi.mock('$hooks/useComposingCheck', () => ({ useComposingCheck: () => () => false }));
 vi.mock('$hooks/usePerMessageProfile', () => ({
   convertPerMessageProfileToBeeperFormat: () => ({}),
+  resolvePersona: () => undefined,
+  resolvePersonaProxy: () => undefined,
   getCurrentlyUsedPerMessageProfileForAccount: async () => undefined,
   getCurrentlyUsedPerMessageProfileForRoom: async () => undefined,
+}));
+vi.mock('$app/persona/catalog', () => ({
+  ProfileCatalog: class {
+    list = async () => [];
+    getSelection = async (scope: 'account' | { roomId: string }) =>
+      scope === 'account' ? testState.accountPersonaSelection : testState.roomPersonaSelection;
+  },
 }));
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
@@ -681,6 +692,8 @@ beforeEach(() => {
   testState.safeUploadFile.mockReset().mockImplementation(async (file: File) => file);
   testState.encryptFile.mockReset();
   testState.editingEvent = undefined;
+  testState.accountPersonaSelection = undefined;
+  testState.roomPersonaSelection = undefined;
   testState.matrix.sendMessage.mockReset().mockResolvedValue({ event_id: '$event' });
   testState.matrix.sendEvent.mockReset().mockResolvedValue({});
   testState.cancelDelayedEvent.mockReset();
@@ -721,6 +734,36 @@ describe('RoomInput submit regressions', () => {
     await waitFor(() => expect(testState.matrix.sendMessage).toHaveBeenCalledTimes(2));
     expect(testState.matrix.sendMessage.mock.calls[0]?.[2]?.body).toBe('attachment.txt');
     expect(testState.matrix.sendMessage.mock.calls[1]?.[2]?.body).toBe('retry me');
+  });
+
+  it('uses the active resolved persona for attachments and stickers', async () => {
+    testState.accountPersonaSelection = {
+      persona: { id: 'account', displayname: 'Account', trigger: { prefix: [] } },
+    };
+    testState.roomPersonaSelection = {
+      persona: { id: 'expired-room', displayname: 'Expired', trigger: { prefix: [] } },
+      validUntil: Date.now() - 1,
+    };
+    render(<RoomInputHarness />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare attachment' }));
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(testState.matrix.sendMessage).toHaveBeenCalledOnce());
+    expect(
+      testState.matrix.sendMessage.mock.calls[0]?.[2]?.['com.beeper.per_message_profile']
+    ).toMatchObject({
+      id: 'account',
+      displayname: 'Account',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select sticker' }));
+    await waitFor(() => expect(testState.matrix.sendEvent).toHaveBeenCalledOnce());
+    expect(
+      testState.matrix.sendEvent.mock.calls[0]?.[2]?.['com.beeper.per_message_profile']
+    ).toMatchObject({
+      id: 'account',
+      displayname: 'Account',
+    });
   });
 
   it('keeps attachment retry locked until every sibling send settles', async () => {

@@ -7,14 +7,8 @@ import {
 import { ResponsiveMenu } from '$components/ResponsiveMenu';
 import { UserAvatar } from '$components/user-avatar/UserAvatar.tsx';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication.ts';
-import {
-  getCurrentlyUsedPerMessageProfileForRoom,
-  getAllPerMessageProfiles,
-  type PerMessageProfileMsc4461,
-  setCurrentlyUsedPerMessageProfileIdForRoom,
-  getCurrentlyUsedPerMessageProfileForAccount,
-  setCurrentlyUsedPerMessageProfileIdForAccount,
-} from '$hooks/usePerMessageProfile';
+import type { PerMessageProfileMsc4461 } from '$app/persona';
+import { ProfileCatalog } from '$app/persona/catalog';
 import { mxcUrlToHttp } from '$utils/matrix.ts';
 import { isMobileOrTablet } from '$utils/platform';
 import { nameInitials } from '$utils/common';
@@ -172,7 +166,9 @@ function PersonaPickerMenu({
     void syncProfile(
       roomSelectionRef,
       () =>
-        roomId ? getCurrentlyUsedPerMessageProfileForRoom(mx, roomId) : Promise.resolve(undefined),
+        roomId
+          ? new ProfileCatalog(mx).getSelection({ roomId }).then((selection) => selection?.persona)
+          : Promise.resolve(undefined),
       // A latched persona already reflects the user's intent, so don't overwrite it.
       (profile) => {
         if (!selectedRoomPersona) setSelectedRoomPersona(profile);
@@ -180,7 +176,7 @@ function PersonaPickerMenu({
     );
     void syncProfile(
       globalSelectionRef,
-      () => getCurrentlyUsedPerMessageProfileForAccount(mx),
+      () => new ProfileCatalog(mx).getSelection('account').then((selection) => selection?.persona),
       setSelectedGlobalPersona
     );
 
@@ -192,7 +188,7 @@ function PersonaPickerMenu({
   const fetchProfiles = useCallback(async (mx_: MatrixClient) => {
     const fetchGeneration = ++profileFetchGenerationRef.current;
     try {
-      const fetchedProfiles = await getAllPerMessageProfiles(mx_);
+      const fetchedProfiles = await new ProfileCatalog(mx_).list();
       if (!mountedRef.current || fetchGeneration !== profileFetchGenerationRef.current) {
         return;
       }
@@ -330,22 +326,12 @@ function PersonaPickerMenu({
                       setPersona(disabling ? null : profile);
 
                       try {
-                        if (isGlobal) {
-                          await setCurrentlyUsedPerMessageProfileIdForAccount(
-                            mx,
-                            disabling ? undefined : profile.id,
-                            undefined,
-                            disabling
-                          );
-                        } else {
-                          await setCurrentlyUsedPerMessageProfileIdForRoom(
-                            mx,
-                            roomId!,
-                            disabling ? undefined : profile.id,
-                            undefined,
-                            disabling
-                          );
-                        }
+                        await new ProfileCatalog(mx).setSelection(
+                          isGlobal ? 'account' : { roomId: roomId! },
+                          disabling ? undefined : profile.id,
+                          undefined,
+                          disabling
+                        );
                       } catch {
                         if (mountedRef.current && selectionGeneration === generationRef.current) {
                           setPersona(previousPersona);

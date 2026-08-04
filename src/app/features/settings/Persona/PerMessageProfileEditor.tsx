@@ -372,9 +372,8 @@ export function PerMessageProfileEditor({
       setChangingDisplayName(false);
       setDisableSetDisplayname(false);
       if (hasIdChange) {
-        renamePerMessageProfile(mx, profileId, newId).then(() => {
-          setCurrentId(newId);
-        });
+        await renamePerMessageProfile(mx, profileId, newId);
+        setCurrentId(newId);
       }
     }, [
       mx,

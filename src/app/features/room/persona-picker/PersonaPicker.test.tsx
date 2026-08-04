@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MatrixClient } from 'matrix-js-sdk';
-import type { PerMessageProfileMsc4461 } from '$hooks/usePerMessageProfile';
+import type { PerMessageProfileMsc4461 } from '$app/persona';
 import { PersonaPicker, PersonaPickerTab } from './PersonaPicker';
 
 const mocked = vi.hoisted(() => ({
@@ -14,12 +14,33 @@ const mocked = vi.hoisted(() => ({
   setAccount: vi.fn<(...args: unknown[]) => Promise<void>>(),
 }));
 
-vi.mock('$hooks/usePerMessageProfile', () => ({
-  getAllPerMessageProfiles: mocked.getAll,
-  getCurrentlyUsedPerMessageProfileForRoom: mocked.getRoom,
-  getCurrentlyUsedPerMessageProfileForAccount: mocked.getAccount,
-  setCurrentlyUsedPerMessageProfileIdForRoom: mocked.setRoom,
-  setCurrentlyUsedPerMessageProfileIdForAccount: mocked.setAccount,
+vi.mock('$app/persona/catalog', () => ({
+  ProfileCatalog: class {
+    constructor(private readonly mx: MatrixClient) {}
+
+    list() {
+      return mocked.getAll(this.mx);
+    }
+
+    async getSelection(scope: 'account' | { roomId: string }) {
+      const persona =
+        scope === 'account'
+          ? await mocked.getAccount(this.mx)
+          : await mocked.getRoom(this.mx, scope.roomId);
+      return persona ? { persona } : undefined;
+    }
+
+    setSelection(
+      scope: 'account' | { roomId: string },
+      profileId: string | undefined,
+      validUntil?: number,
+      reset?: boolean
+    ) {
+      return scope === 'account'
+        ? mocked.setAccount(this.mx, profileId, validUntil, reset)
+        : mocked.setRoom(this.mx, scope.roomId, profileId, validUntil, reset);
+    }
+  },
 }));
 vi.mock('$hooks/useMediaAuthentication.ts', () => ({ useMediaAuthentication: () => false }));
 // useActiveTheme reaches for window.matchMedia, which jsdom does not provide.

@@ -143,13 +143,11 @@ import { usePowerLevelsContext } from '$hooks/usePowerLevels';
 import { useRoomCreators } from '$hooks/useRoomCreators';
 import { useRoomPermissions } from '$hooks/useRoomPermissions';
 import { AutocompleteNotice } from '$components/editor/autocomplete/AutocompleteNotice';
-import {
-  convertPerMessageProfileToBeeperFormat,
-  getCurrentlyUsedPerMessageProfileForAccount,
-  getCurrentlyUsedPerMessageProfileForRoom,
-  type PerMessageProfileMsc4461,
-  setCurrentlyUsedPerMessageProfileIdForRoom,
-} from '$hooks/usePerMessageProfile';
+import { setCurrentlyUsedPerMessageProfileIdForRoom } from '$hooks/usePerMessageProfile';
+import type { PerMessageProfileMsc4461 } from '$app/persona';
+import { ProfileCatalog } from '$app/persona/catalog';
+import { projectPersona } from '$app/persona/projection';
+import { resolvePersona } from '$app/persona/selection';
 import {
   Bell,
   BellSlash,
@@ -177,7 +175,6 @@ import {
 import { getSupportedAudioExtension } from '$plugins/voice-recorder-kit/supportedCodec';
 import { ErrorCode } from '../../cs-errorcode';
 import { PKitCommandMessageHandler } from '$plugins/pluralkit-handler/PKitCommandMessageHandler';
-import { PKitProxyMessageHandler } from '$plugins/pluralkit-handler/PKitProxyMessageHandler';
 import type { IGenericMSC4459, MSC4459ImagePackReference } from '$types/matrix/common';
 import {
   getImagePackReferencesForMxc,
@@ -352,10 +349,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       () => new PKitCommandMessageHandler(mx, room),
       [mx, room]
     );
-    const pluralkitProxyMessageHandler = useMemo(() => new PKitProxyMessageHandler(mx), [mx]);
-    useEffect(() => {
-      pluralkitProxyMessageHandler.init();
-    }, [pluralkitProxyMessageHandler]);
 
     const [pkCompatEnable] = useSetting(settingsAtom, 'pkCompat');
     const [pmpProxyingEnable] = useSetting(settingsAtom, 'pmpProxying');
@@ -1074,22 +1067,22 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       const submittedReplyDraft = submission.replyClaim?.snapshot;
       const submittedSilentReply = submission.replyClaim?.silentReply ?? silentReply;
 
-      /**
-       * the currently with the room associated per-message profile, if any, so that it can be included in the message content when sending.
-       * This allows the server to apply the correct profile-based transformations (e.g. font size adjustments) when processing the message,
-       * and also allows clients to display an accurate preview of how the message will look with the profile applied while it's being composed.
-       */
-      const globalPerMessageProfile = await getCurrentlyUsedPerMessageProfileForAccount(mx);
-      const roomPerMessageProfile = await getCurrentlyUsedPerMessageProfileForRoom(mx, roomId);
-      const perMessageProfile = roomPerMessageProfile ?? globalPerMessageProfile;
+      const catalog = new ProfileCatalog(mx);
+      const [account, roomSelection] = await Promise.all([
+        catalog.getSelection('account'),
+        catalog.getSelection({ roomId }),
+      ]);
+      const perMessageProfile = resolvePersona({
+        latched: latchedPersona,
+        room: roomSelection,
+        account,
+        now: Date.now(),
+      });
 
       if (perMessageProfile) {
         contents.forEach((c) => {
-          // We intentionally mutate the objects here to avoid unnecessary copying
-          // mutating should be unproblematic here, since contents isn't a react component,
-          // or used for rendering
           c[prefix.MATRIX_UNSTABLE_PER_MESSAGE_PROFILE_PROPERTY_NAME] =
-            convertPerMessageProfileToBeeperFormat(perMessageProfile, false);
+            projectPersona(perMessageProfile);
         });
       }
 
@@ -1459,7 +1452,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
             pmpNoFallback,
             latchedPersona,
             isPKCommand: (text) => PKitCommandMessageHandler.isPKCommand(text),
-            pluralkitProxyMessageHandler,
             imagePacksUsed: imagePacksUsedRef.current,
           });
 
@@ -1621,7 +1613,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         pkCompatEnable,
         silentReply,
         pmpProxyingEnable,
-        pluralkitProxyMessageHandler,
         scheduledTime,
         editingScheduledDelayId,
         nicknames,
@@ -1847,18 +1838,21 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       content[prefix.MATRIX_UNSTABLE_IMAGE_SOURCE_PACK_PROPERTY_NAME] =
         getImagePackReferencesForMxcWrappedInMap(mxc, mx, ImageUsage.Sticker, room);
 
-      /**
-       * the currently with the room associated per-message profile, if any, so that it can be included in the message content when sending.
-       * This allows the server to apply the correct profile-based transformations (e.g. font size adjustments) when processing the message,
-       * and also allows clients to display an accurate preview of how the message will look with the profile applied while it's being composed.
-       */
-      const globalPerMessageProfile = await getCurrentlyUsedPerMessageProfileForAccount(mx);
-      const roomPerMessageProfile = await getCurrentlyUsedPerMessageProfileForRoom(mx, roomId);
-      const perMessageProfile = roomPerMessageProfile ?? globalPerMessageProfile;
+      const catalog = new ProfileCatalog(mx);
+      const [account, roomSelection] = await Promise.all([
+        catalog.getSelection('account'),
+        catalog.getSelection({ roomId }),
+      ]);
+      const perMessageProfile = resolvePersona({
+        latched: latchedPersona,
+        room: roomSelection,
+        account,
+        now: Date.now(),
+      });
 
       if (perMessageProfile) {
         content[prefix.MATRIX_UNSTABLE_PER_MESSAGE_PROFILE_PROPERTY_NAME] =
-          convertPerMessageProfileToBeeperFormat(perMessageProfile, false);
+          projectPersona(perMessageProfile);
       }
       content[prefix.MATRIX_UNSTABLE_IMAGE_SOURCE_PACK_PROPERTY_NAME] =
         getImagePackReferencesForMxcWrappedInMap(mxc, mx, ImageUsage.Sticker, room);

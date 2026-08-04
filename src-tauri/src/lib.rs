@@ -346,6 +346,9 @@ pub fn run() {
             network::media_protocol::respond,
         )
         .setup(|app| {
+            #[cfg(target_os = "android")]
+            mobile::set_app_handle(app.handle().clone());
+
             // CEF is initialized during runtime construction; initialize GTK afterward
             // on the main thread for the Linux tray menu.
             #[cfg(all(feature = "cef", target_os = "linux"))]

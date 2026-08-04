@@ -23,6 +23,7 @@ import org.json.JSONObject
 
 class MainActivity : TauriActivity() {
   private external fun nativeInitStatusBar()
+  private external fun nativeShareReceived()
 
   // Route the hardware back button through the web app (see onWebViewCreate).
   override val handleBackNavigation: Boolean = false
@@ -78,6 +79,7 @@ class MainActivity : TauriActivity() {
         put("items", items)
       }.toString()
     )
+    nativeShareReceived()
   }
 
   private fun addTextItem(items: JSONArray, text: String) {

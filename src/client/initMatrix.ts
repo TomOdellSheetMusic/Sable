@@ -184,6 +184,19 @@ const deleteSessionStores = async (storeName: SessionStoreName): Promise<void> =
   ]);
 };
 
+const clearSessionCaches = (session: Session): void => {
+  SlidingSyncSidebarCache.clear(session.userId);
+  clearCachedVersions(session.baseUrl, session.userId);
+  clearCachedUserProfiles(session.userId);
+  clearSecretStorageKeys();
+};
+
+export const discardSessionStores = async (session: Session): Promise<void> => {
+  clearSessionCaches(session);
+  const storeName = getSessionStoreName(session);
+  await deleteSessionStores(storeName);
+};
+
 const isMismatch = (err: unknown): boolean => {
   const msg = err instanceof Error ? err.message : String(err);
   return (
@@ -561,15 +574,10 @@ export const logoutClient = async (mx: MatrixClient, session?: Session) => {
   }
 
   if (session) {
-    SlidingSyncSidebarCache.clear(session.userId);
-    clearCachedVersions(session.baseUrl, session.userId);
-    clearCachedUserProfiles(session.userId);
-    clearSecretStorageKeys();
+    clearSessionCaches(session);
     const storeName: SessionStoreName = getSessionStoreName(session);
     await mx.clearStores({ cryptoDatabasePrefix: storeName.rustCryptoPrefix });
-    await deleteDatabase(storeName.sync);
-    await deleteDatabase(storeName.crypto);
-    await deleteDatabase(`${storeName.rustCryptoPrefix}::matrix-sdk-crypto`);
+    await deleteSessionStores(storeName);
   } else {
     await mx.clearStores();
     window.localStorage.clear();

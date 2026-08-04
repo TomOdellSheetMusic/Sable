@@ -20,12 +20,23 @@ const wasmCryptoStoreExists = async (cryptoDatabasePrefix: string): Promise<bool
   return databases.some((database) => database.name === name);
 };
 
-// A wasm session's Olm account cannot be adopted, so it keeps wasm until re-auth.
+export class LegacyWasmCryptoStoreError extends Error {
+  constructor() {
+    super(
+      'Encrypted chat has been upgraded to the native crypto engine. Sign out and sign in again to continue. Local encrypted-message keys from this installation will need to be restored from backup.'
+    );
+    this.name = 'LegacyWasmCryptoStoreError';
+  }
+}
+
+export const isLegacyWasmCryptoStoreError = (error: unknown): error is LegacyWasmCryptoStoreError =>
+  error instanceof LegacyWasmCryptoStoreError;
+
 export const rustEngineEnabled = async (cryptoDatabasePrefix: string): Promise<boolean> => {
   if (!isTauri()) return false;
   if (await wasmCryptoStoreExists(cryptoDatabasePrefix)) {
-    cryptoLog.info('general', 'Keeping wasm crypto: this session predates the Rust engine');
-    return false;
+    cryptoLog.warn('general', 'Legacy WASM crypto store requires re-authentication');
+    throw new LegacyWasmCryptoStoreError();
   }
   return true;
 };

@@ -4,6 +4,7 @@ import type { Update } from '@tauri-apps/plugin-updater';
 import { isDesktopTauri } from '$utils/platform';
 import { autoUpdateCheckAtom } from '$state/autoUpdateCheck';
 import { createLogger } from '$utils/debug';
+import { getDebugLogger } from '$utils/debugLogger';
 import { hasCustomDesktopTitlebar } from '$utils/tauriTitlebar';
 import { useDesktopSetting } from '$state/hooks/desktopSettings';
 import { ArrowUp } from '$components/icons/phosphor';
@@ -18,6 +19,17 @@ import {
 
 const log = createLogger('DesktopUpdater');
 const UPDATE_POLL_INTERVAL_MS = 300_000; // 5 minutes
+
+const logUpdaterError = (message: string, error: unknown): void => {
+  log.error(message, error);
+  const detail =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'object' && error !== null && 'message' in error
+        ? String(error.message)
+        : String(error);
+  getDebugLogger().log('error', 'network', 'DesktopUpdater', `${message}: ${detail}`);
+};
 
 export function DesktopUpdater() {
   const autoUpdateCheck = useAtomValue(autoUpdateCheckAtom);
@@ -92,7 +104,7 @@ export function DesktopUpdater() {
         setLastChecked(new Date().toISOString());
         if (!hasCustomDesktopTitlebar(useCustomTitleBar)) setBannerVisible(true);
       } catch (err) {
-        log.error('Desktop update check failed', err);
+        logUpdaterError('Desktop update check failed', err);
         if (mounted) {
           if (!hasUpdateRef.current) {
             setPhase({ type: 'idle' });
@@ -179,7 +191,7 @@ export function DesktopUpdater() {
       pendingUpdateRef.current = null;
       closePendingUpdate(updateInfo);
     } catch (err) {
-      log.error('Failed to install update', err);
+      logUpdaterError('Failed to install update', err);
       setIsDownloading(false);
       setIsInstalling(false);
       installStartedRef.current = false;

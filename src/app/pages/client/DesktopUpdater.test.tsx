@@ -4,6 +4,7 @@ import { useAtomValue, useSetAtom, Provider } from 'jotai';
 import { globalBannersAtom } from '$state/globalBanners';
 import { triggerUpdateCheckAtom } from '$state/desktopUpdate';
 import { DesktopUpdatePill } from '$components/tauri/DesktopUpdatePill';
+import { getDebugLogger } from '$utils/debugLogger';
 import { DesktopUpdater } from './DesktopUpdater';
 
 const { checkFn } = vi.hoisted(() => ({ checkFn: vi.fn<() => Promise<unknown>>() }));
@@ -156,8 +157,9 @@ describe('DesktopUpdater', () => {
 
   it('retries when downloadAndInstall fails', async () => {
     const update = makeUpdate('4.0.0');
+    const debugLog = vi.spyOn(getDebugLogger(), 'log');
     update.downloadAndInstall
-      .mockRejectedValueOnce(new Error('eacces'))
+      .mockRejectedValueOnce({ message: 'permission denied' })
       .mockResolvedValueOnce(undefined);
     checkFn.mockResolvedValue(update);
 
@@ -178,6 +180,12 @@ describe('DesktopUpdater', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Download & Install' })).toBeInTheDocument();
     });
+    expect(debugLog).toHaveBeenCalledWith(
+      'error',
+      'network',
+      'DesktopUpdater',
+      'Failed to install update: permission denied'
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Download & Install' }));
     await waitFor(() => expect(update.downloadAndInstall).toHaveBeenCalledTimes(2));

@@ -718,6 +718,75 @@ export class CallEmbed {
           outline: none !important;
         }
 
+        /* Convert Element Call's settings checkboxes into Sable-style toggle switches. */
+        [class*="_checkboxField_"] [class*="_checkbox_"] {
+          display: none !important;
+        }
+        [class*="_checkboxField_"] > input[type="checkbox"] {
+          -webkit-appearance: none !important;
+          appearance: none !important;
+          display: inline-flex !important;
+          flex-shrink: 0 !important;
+          align-self: center !important;
+          width: 44px !important;
+          height: 24px !important;
+          box-sizing: border-box !important;
+          margin: 0 10px 0 0 !important;
+          padding: 0 !important;
+          position: relative !important;
+          background-color: transparent !important;
+          border-radius: ${resolveCssVar(config.radii.Pill)} !important;
+          box-shadow: inset 0 0 0 1.5px CurrentColor !important;
+          color: ${resolveCssVar(color.Background.OnContainer)} !important;
+          cursor: pointer !important;
+          outline: none !important;
+          opacity: 0.75 !important;
+          transition: background-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease !important;
+        }
+        [class*="_checkboxField_"] > input[type="checkbox"]::before {
+          content: "" !important;
+          position: absolute !important;
+          top: 50% !important;
+          left: 0 !important;
+          width: 14px !important;
+          height: 14px !important;
+          border-radius: ${resolveCssVar(config.radii.Pill)} !important;
+          background-color: CurrentColor !important;
+          transform: translateY(-50%) translateX(5px) !important;
+          transition: transform 0.15s ease, width 0.15s ease, height 0.15s ease, background-color 0.15s ease !important;
+        }
+        [class*="_checkboxField_"] > input[type="checkbox"]::after {
+          border-left: 2px solid ${resolveCssVar(color.Primary.Main)} !important;
+          border-bottom: 2px solid ${resolveCssVar(color.Primary.Main)} !important;
+          opacity: 0 !important;
+          transform: rotate(-45deg) !important;
+          transition: left 0.15s ease, opacity 0.15s ease !important;
+        }
+        [class*="_checkboxField_"] > input[type="checkbox"]:checked {
+          background-color: ${resolveCssVar(color.Primary.Main)} !important;
+          color: ${resolveCssVar(color.Primary.OnMain)} !important;
+          box-shadow: none !important;
+          opacity: 1 !important;
+        }
+        [class*="_checkboxField_"] > input[type="checkbox"]:checked::before {
+          width: 18px !important;
+          height: 18px !important;
+          background-color: ${resolveCssVar(color.Primary.OnMain)} !important;
+          transform: translateY(-50%) translateX(23px) !important;
+        }
+        [class*="_checkboxField_"] > input[type="checkbox"]:checked::after {
+          left: 27px !important;
+          opacity: 1 !important;
+        }
+        [class*="_checkboxField_"] > input[type="checkbox"]:focus-visible {
+          outline: 3px solid ${resolveCssVar(color.Other.FocusRing)} !important;
+          outline-offset: 0 !important;
+        }
+        [class*="_checkboxField_"][class*="_disabled_"] > input[type="checkbox"] {
+          opacity: 0.38 !important;
+          cursor: not-allowed !important;
+        }
+
         /* Scrollbars */
         ::-webkit-scrollbar {
           width: 16px;

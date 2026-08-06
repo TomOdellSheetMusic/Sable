@@ -1,5 +1,104 @@
 # Sable Client Changelog
 
+## 1.21.0 (2026-08-06)
+
+### Features
+
+* Add MSC4466 profile sync controls for supported homeservers. by @7w1 in #1117
+* Add toggleable, reorderable composer trigger buttons (emoji, gif, sticker) with a drag-and-drop settings list. by @eleboucher in #1261
+* Add Account-wide persona toggle in Persona Picker by @j0lol in #1264
+* Add persona latching when using shorthands by @j0lol in #1435
+* Add persona name colors by @j0lol in #1462
+* Add Persona picker in Editor by @j0lol in #1171
+* Add PMP shorthand editing in Settings by @j0lol in #1352
+* Add the option to remove the fallback from PMPs by @j0lol in #1611
+* Allow changing/editing PMP on messages by @j0lol in #1586
+* Attach files and media from a bottom sheet on the message input. by @eleboucher in #1234
+* Clean up the design of Persona settings by @j0lol in #1223
+* Update the device display name after login to reflect the current client and build flavor. by @hazre in #1458
+* Replaced the connection status top bar with a small styled popup and added a variant that shows sliding sync initial progress. by @7w1 in #1200
+* Impl MSC4461: Storing per-message profiles for users by @j0lol in #1589
+* Rework the emoji picker as a bottom sheet that keeps its size when the keyboard opens and can be swiped down to dismiss. by @eleboucher in #1433
+
+* Add beta builds for desktop and mobile. by @eleboucher in #1103
+
+### Fixes
+
+* Add an imperative `confirm()` facade for destructive confirms and route the leave-room confirms onto it. by @eleboucher in #1358
+* Added a modal for viewing room details on smaller screens. by @7w1 in #1173
+* Publish an `obtainium.json` app config with every release so Android builds can be installed and auto-updated through Obtainium. by @eleboucher in #1616
+* Add account switching and logout actions to the offline screen. by @7w1 in #1115
+* Add loading feedback in Persona settings menu by @j0lol in #1369
+* Add retry button for homeserver discovery during login by @lunar-seal in #1380
+* Cache cross-signing device verification so sliding sync device list updates no longer re-verify every device on every response. by @eleboucher in #1305
+* Cache room metadata for faster sliding sync warm starts. by @7w1 in #1118
+* Fix a crash when opening room cosmetics settings before the room member list has loaded. by @eleboucher in #1298
+* Escape blockquote data-md=">" because that's good practice by @j0lol in #1600
+* Fix video and audio failing to play on Firefox with "no video with supported format and MIME type found". by @eleboucher in #1334
+* Keep the message input focused after selecting autocomplete suggestions. by @eleboucher in #1103
+* Fix being unable to restore key backup on a verified device by @eleboucher in #1379
+* Made popups on start appear sequentially instead of bombarding all at once. by @7w1 in #1200
+* Fix missing profile pictures for bridged users in timeline when using sliding sync. by @eleboucher in #1112
+* Fix Maps that contain incorrect numbers for lat/lon crashing sable by @nushea in #1248
+* Fix room leaving state not updating immediately in UI. by @7w1 in #1146
+* Free decrypted images and media from memory instead of holding them until reload by @eleboucher in #1381
+* Fix encrypted images and GIFs failing to render, and improve media cache handling. by @eleboucher in #1271
+* Smooth out animation when tapping 'following the conversation'. by @7w1 in #1173
+* Fix OIDC/SSO identity reset not being detected or completed by the client. by @eleboucher in #1270
+* Refill the room member list from the server when sliding sync only delivered lazy-loaded members, so mention autocomplete and the members panel are complete. by @eleboucher in #1554
+* Fix Markdown checklists rendering as raw `<input>` HTML by @eleboucher in #1354
+* Fix context menus, message long-press, bottom sheet swipe-to-dismiss, thread reactions, thread root replies, and the direct conversation invite prompt. by @eleboucher in #1367
+* Fix context menus dismissing themselves instead of opening. by @eleboucher in #1431
+* Fix the scheduled-messages chip not appearing in a room despite having pending scheduled messages. by @jasonlaguidice in #1514
+* Fix the navigation drawer sliding permanently out of frame after the keyboard or a focus change scrolls the panel track. by @eleboucher in #1303
+* Fix keyboard flickering when editing messages. by @eleboucher in #1130
+* Show setting selects as dialogs where appropriate, keep a long-pressed room's menu open, and stop wide setting tiles squeezing their title. by @eleboucher in #1382
+* Improve touch feedback and prevent accidental presses. by @7w1 in #1173
+* Recover faster from network switches and flaky connections. by @eleboucher in #1399
+* Make navigation smoother and room opening faster. by @eleboucher in #1144
+* Changed the web page title to show the mention count instead of the total unread message count. by @eleboucher in #1245
+* Restore polls in room timelines. by @eleboucher in #1425
+* Colour profile sheets with the profile's hero colour again, including the drag handle and navigation bar inset. Restore full scrolling in the pinned-messages sheet. by @eleboucher in #1503
+* Fixed accepted invites reappearing after restart on homeservers that keep sending invite state for joined rooms. by @eleboucher in #1284
+* Fix missing user display names under sliding sync across search, notifications, threads, and replies. by @7w1 in #1170
+* Fix display names in read receipts and event details when using sliding sync with member drawer closed. by @7w1 in #1111
+* Fix sliding sync not subscribing to call updates. by @7w1 in #1173
+* Fix outdated user display names in chats under sliding sync by force-refreshing room member state when the global profile suggests the per-room name is stale. by @eleboucher in #1530
+* Fix subspaces with emote packs listed as separate spaces under sliding sync. by @mortebrume in #1119
+* Fix space icons staying blank on first open with sliding sync. by @eleboucher in #1112
+* Fix loading space-hosted sticker and emote packs when using sliding sync. by @eleboucher in #1112
+* Restore locally imported CSS tweaks when syncing settings between devices. by @eleboucher in #1220
+* Fix thread messages so mentions use nicknames, inline images keep their sizing, and sender profiles come from the cache instead of rendering blank. Room avatars now load reliably. by @eleboucher in #1358
+* Fix timeline auto-scrolling to new messages when pinned to the bottom. by @eleboucher in #1105
+* Keep following the timeline when a message grows after it renders by @eleboucher in #1373
+* Fixed timeline pagination becoming stuck when hidden events are disabled. by @7w1 in #1363
+* Stop the timeline loading a room's whole history on open by @eleboucher in #1373
+* Prevent typing indicator from obscuring messages and stabilize timeline scroll snapping. by @eleboucher in #1113
+* Various visual tweaks by @nushea in #1114
+* Fix voice recording continuing indefinitely when the record button is rapidly tapped. by @eleboucher in #1252
+* Stop the microphone when a voice recording is cancelled, deleted, restarted or unmounted before the permission prompt resolves. by @eleboucher in #1428
+* Fix an inconsistency where a user profile's local time did not respect the "24-Hour Time Format" setting by @bartoostveen in #1579
+* Fix overlapping Bookmarks and Bold Text shortcut by @cyrneko in #1120
+* Fix spoilers breaking when using a proxy tag/shorthand by @j0lol in #1307
+* Add support for displaying gzipped lottie (e.g. tgs) files. by @mohsenasm in #1104
+* Fix media failing to load until a view is reopened, and load sticker grids faster. by @eleboucher in #1331
+* Improve encrypted-media loading and error handling on slow connections. by @eleboucher in #1296
+* Migrate the sidebar, space tab, space folder, and image viewer menus onto useMenuAnchor so they open on long-press as well as right-click. by @eleboucher in #1358
+* Notification sounds no longer play as media. by @eleboucher in #1353
+* Fix device verification setup hanging on OAuth homeservers by submitting the `m.oauth` stage type. by @eleboucher in #1348
+* Add option to always keep the last line of the text editor "inline" with the UI buttons. by @lunar-seal in #1218
+* Improve app startup speed and eliminate initial launch screen flickering. by @eleboucher in #1127
+* Persona Picker style tweaks by @j0lol in #1368
+* Polish the account panel and settings layout. by @eleboucher in #1131
+* Polish the chat input with adaptive send and recording controls, easier photo attachment, and more reliable uploads. by @eleboucher in #1166
+* Properly format PMP replies by @j0lol in #1479
+* Reduce memory use by pruning inactive room history while keeping it available for pagination. by @eleboucher in #1466
+* Keep the room options sheet open instead of dismissing it as soon as the pointer leaves the room. by @eleboucher in #1336
+* Fix tapping a sticker silently not sending it. by @eleboucher in #1332
+* Add swipe-to-edit gestures to messages. by @7w1 in #1267
+* Various performance improvements. by @7w1 in #1184
+* Wrap membership event reasons in parentheses by @Steffo99 in #1470
+
 ## 1.20.0 (2026-07-17)
 
 ### Security

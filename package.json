@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "build:sable-call": "node scripts/build-sable-call.mjs",
     "preview": "vite preview",
     "lint": "oxlint .",
     "lint:fix": "oxlint . --fix && oxfmt .",

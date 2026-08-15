@@ -33,6 +33,18 @@ function run(cmd, cwd) {
   execSync(cmd, { cwd, stdio: 'inherit' });
 }
 
+// Run a pnpm command inside the SableCall checkout using the pnpm version that
+// SableCall pins in its own package.json ("packageManager"), rather than the
+// pnpm that happens to be on the PATH (which is Sable's own pin). The two
+// projects pin different pnpm major versions, and the SableCall lockfile (made
+// with pnpm 11) contains git-hosted deps like matrix-js-sdk@github:...#develop
+// (v41.7.0) that Sable's older pnpm 10 cannot parse (ERR_PNPM_INVALID_VERSION_UNION).
+// Invoking via corepack lets corepack read SableCall's "packageManager" field
+// and use its exact pinned pnpm, keeping the two projects' toolchains decoupled.
+function runPnpm(cwd, ...args) {
+  run(`corepack pnpm ${args.join(' ')}`, cwd);
+}
+
 let sourceDir;
 let cleanupDir = null;
 
@@ -51,9 +63,11 @@ try {
     run(`git clone --depth 1 ${REF ? `--branch ${REF}` : ''} "${REPO}" "${sourceDir}"`);
   }
 
-  // Install dependencies and build the embedded bundle.
-  run('pnpm install --frozen-lockfile', sourceDir);
-  run('pnpm build:embedded:production', sourceDir);
+  // Install dependencies and build the embedded bundle. Use SableCall's own
+  // pinned pnpm (via corepack) so the frozen lockfile install is run with a
+  // compatible pnpm version.
+  runPnpm(sourceDir, 'install', '--frozen-lockfile');
+  runPnpm(sourceDir, 'build:embedded:production');
 
   const builtDist = join(sourceDir, 'dist');
   if (!existsSync(builtDist)) {

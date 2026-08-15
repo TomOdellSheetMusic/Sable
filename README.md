@@ -1,3 +1,6 @@
+# My special fork of Sable
+Forked this and now also deploy my own creature comfort patches (windows only) that are not needed by the Sable community but me and my friends really wanted. Every feature I added to Sable should be on a not deleted feature branch, so if the occasion arises, it should be straight forward to pull them in. 
+
 # Sable
 
 A Matrix client built to enhance the user experience with quality-of-life features, cosmetics, utilities, and sheer usability. See the [changelog](https://github.com/SableClient/Sable/blob/dev/CHANGELOG.md).

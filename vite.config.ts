@@ -82,18 +82,14 @@ const baseProductName = typeof appConfig.productName === 'string' ? appConfig.pr
 // published @sableclient/sable-call-embedded package as a fallback when no
 // fork bundle exists yet — keeping `pnpm install`-only local dev working
 // without ever needing a SableCall rebuild.
-const hasForkCallBuild = fs.existsSync(
-  path.join(__dirname, 'public/element-call/index.html')
-);
+const hasForkCallBuild = fs.existsSync(path.join(__dirname, 'public/element-call/index.html'));
 const sableCallDistSource = hasForkCallBuild
   ? null
   : 'node_modules/@sableclient/sable-call-embedded/dist/*';
 
 const copyFiles = {
   targets: [
-    ...(sableCallDistSource
-      ? [{ src: sableCallDistSource, dest: 'public/element-call' }]
-      : []),
+    ...(sableCallDistSource ? [{ src: sableCallDistSource, dest: 'public/element-call' }] : []),
     {
       src: 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
       dest: '',

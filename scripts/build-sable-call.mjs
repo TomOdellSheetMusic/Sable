@@ -2,7 +2,7 @@
 /* oxlint-disable no-console */
 
 // Builds the SableCall embedded bundle from source and places it where the
-// Sable Vite build expects it (node_modules/@sableclient/sable-call-embedded/dist).
+// Sable Vite build expects it (public/element-call — git-ignored).
 //
 // This lets a fork ship its own SableCall build without publishing to npm.
 //
@@ -12,8 +12,10 @@
 //   SABLE_CALL_DIR   - path to an existing local SableCall checkout; when set, the
 //                      repo is NOT cloned and this directory is used directly.
 //
-// The built embedded bundle is copied into node_modules/@sableclient/sable-call-embedded/dist
-// so the existing vite copy step in vite.config.ts picks it up unchanged.
+// The built embedded bundle is copied into public/element-call (git-ignored), the
+// exact location the vite copy step in vite.config.ts expects. The published
+// @sableclient/sable-call-embedded npm package is never modified, so local dev
+// that only runs `pnpm install` keeps working with the published bundle.
 
 import { execSync } from 'node:child_process';
 import { cpSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
@@ -24,9 +26,12 @@ const REPO = process.env.SABLE_CALL_REPO || 'https://github.com/TomOdellSheetMus
 const REF = process.env.SABLE_CALL_REF || '';
 const LOCAL_DIR = process.env.SABLE_CALL_DIR || '';
 
-const TARGET_DIR = resolve(
-  'node_modules/@sableclient/sable-call-embedded/dist'
-);
+// Where the fork's embedded bundle is placed. This is a git-ignored dir,
+// deliberately NOT inside node_modules: we must never clobber the published
+// @sableclient/sable-call-embedded package, otherwise a normal `pnpm install`
+//-only local dev setup (which uses the published 1.1.8 bundle) would silently
+// lose it and require a fork build to work again.
+const TARGET_DIR = resolve('public/element-call');
 
 function run(cmd, cwd) {
   console.log(`\n$ ${cmd}`);
@@ -75,7 +80,10 @@ try {
     process.exit(1);
   }
 
-  // Replace the embedded package's dist so the existing vite copy step works.
+  // Replace the embedded bundle in the git-ignored target dir (public/element-call
+  // is the exact location vite expects the bundle at, and is git-ignored). The
+  // installed npm package is left untouched so local dev without a fork build
+  // still works.
   rmSync(TARGET_DIR, { recursive: true, force: true });
   cpSync(builtDist, TARGET_DIR, { recursive: true });
   console.log(`\nCopied SableCall embedded build to ${TARGET_DIR}`);

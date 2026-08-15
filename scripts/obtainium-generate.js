@@ -16,7 +16,7 @@ if (!version) {
   process.exit(1);
 }
 
-const GITHUB_REPO = 'SableClient/Sable';
+const GITHUB_REPO = 'TomOdellSheetMusic/Sable';
 const APK_NAME = `Sable-${version}-android-universal.apk`;
 const APK_URL = `https://github.com/${GITHUB_REPO}/releases/download/${tag}/${APK_NAME}`;
 const isNightly = tag === 'nightly';
@@ -38,7 +38,7 @@ const config = {
     {
       id: 'moe.sable.client',
       url: `https://github.com/${GITHUB_REPO}`,
-      author: 'SableClient',
+      author: 'TomOdellSheetMusic',
       name: 'Sable',
       installedVersion: null,
       latestVersion: version,

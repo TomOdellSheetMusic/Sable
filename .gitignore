@@ -9,7 +9,7 @@ devAssets
 .idea
 *.code-workspace
 .env
-
+public/element-call/
 .wrangler
 .dev.vars*
 .terraform/

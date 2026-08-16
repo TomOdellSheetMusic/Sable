@@ -91,6 +91,42 @@ const sableCallDistSource = hasForkCallBuild
   ? 'public/element-call/*'
   : 'node_modules/@sableclient/sable-call-embedded/dist/*';
 
+// In dev, vite-plugin-static-copy's serve middleware serves /element-call/*
+// straight from whichever source was resolved at startup and is ordered BEFORE
+// Vite's public-dir middleware. That means changes re-copied into the
+// git-ignored public/element-call/ (e.g. `pnpm build:sable-call` with
+// SABLE_CALL_DIR, or a manual copy from a local SableCall checkout) are never
+// picked up by the dev server. This plugin takes over /element-call/* in dev
+// and serves from the actual public dir so local changes are respected.
+function devElementCallServe() {
+  return {
+    name: 'vite-plugin-dev-element-call-serve',
+    apply: 'serve' as const,
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use((req, res, next) => {
+        let pathname: string | undefined;
+        try {
+          pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
+        } catch {
+          pathname = undefined;
+        }
+        if (!pathname || !pathname.startsWith('/element-call/')) {
+          next();
+          return;
+        }
+        if (pathname.endsWith('/')) pathname += 'index.html';
+        const filePath = path.join(server.config.root, 'public', pathname);
+        if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+          next();
+          return;
+        }
+        res.setHeader('Cache-Control', 'no-cache');
+        fs.createReadStream(filePath).pipe(res);
+      });
+    },
+  };
+}
+
 const copyFiles = {
   targets: [
     { src: sableCallDistSource, dest: 'public/element-call' },
@@ -207,6 +243,7 @@ export default defineConfig(({ command }) => {
     },
     plugins: [
       serverMatrixSdkCryptoWasm(),
+      devElementCallServe(),
       topLevelAwait({
         // The export name of top-level await promise for each chunk module
         promiseExportName: '__tla',

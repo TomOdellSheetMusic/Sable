@@ -56,12 +56,17 @@ export function resolveReleaseMeta({
   const startedAt = new Date().toISOString();
   let tag, ref, isNightly, version;
 
-  if (eventName === 'workflow_dispatch' && inputTag) {
+  if (eventName === 'workflow_dispatch' && inputTag === 'nightly') {
+    tag = 'nightly';
+    ref = gitSha;
+    isNightly = true;
+    version = nightlyVersion();
+  } else if (eventName === 'workflow_dispatch' && inputTag) {
     tag = inputTag;
     ref = inputTag;
     isNightly = false;
     version = tag.replace(/^v/, '');
-  } else if (gitRef === 'refs/heads/dev') {
+  } else if (gitRef === 'refs/heads/dev' || (eventName === 'workflow_dispatch' && !inputTag)) {
     tag = 'nightly';
     ref = gitSha;
     isNightly = true;

@@ -76,20 +76,24 @@ const isReleaseTag = (() => {
 const baseProductName = typeof appConfig.productName === 'string' ? appConfig.productName : 'Sable';
 
 // The SableCall embedded bundle source. scripts/build-sable-call.mjs writes the
-// fork build directly to the git-ignored public/element-call/ (the exact
-// location this copy target produces), so when that fork build is present we
-// must NOT re-copy the published npm package over it. We only copy from the
-// published @sableclient/sable-call-embedded package as a fallback when no
-// fork bundle exists yet — keeping `pnpm install`-only local dev working
-// without ever needing a SableCall rebuild.
+// fork build directly to the git-ignored public/element-call/ dir. That fork
+// bundle (if present) is copied into dist/public/element-call for the packaged
+// desktop app; otherwise we fall back to copying from the published
+// @sableclient/sable-call-embedded npm package — keeping `pnpm install`-only
+// local dev working without ever needing a SableCall rebuild.
+//
+// NOTE: vite uses `publicDir: false`, so the ONLY thing that produces
+// dist/public/element-call (which the desktop app loads via the asset protocol)
+// is this copy target. It must always be present, for both the fork build and
+// the npm fallback, otherwise the packaged app has no call UI.
 const hasForkCallBuild = fs.existsSync(path.join(__dirname, 'public/element-call/index.html'));
 const sableCallDistSource = hasForkCallBuild
-  ? null
+  ? 'public/element-call/*'
   : 'node_modules/@sableclient/sable-call-embedded/dist/*';
 
 const copyFiles = {
   targets: [
-    ...(sableCallDistSource ? [{ src: sableCallDistSource, dest: 'public/element-call' }] : []),
+    { src: sableCallDistSource, dest: 'public/element-call' },
     {
       src: 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
       dest: '',

@@ -1,7 +1,19 @@
-import { Box, Button, color, config, Menu, MenuItem, Scroll, Text, toRem } from 'folds';
+import {
+  Box,
+  Button,
+  color,
+  config,
+  Input,
+  Menu,
+  MenuItem,
+  Scroll,
+  Spinner,
+  Text,
+  toRem,
+} from 'folds';
 import type { Position, RectCords } from 'folds';
-import type { CSSProperties } from 'react';
-import { useLayoutEffect, useMemo, useState } from 'react';
+import type { CSSProperties, FormEventHandler, KeyboardEventHandler } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAtomValue } from 'jotai';
 import type { Opts as LinkifyOpts } from 'linkifyjs';
@@ -14,10 +26,21 @@ import {
   ChatCircle,
   Clock,
   Heart,
+  PaperPlaneTilt,
   profileIcon,
   User,
 } from '$components/icons/phosphor';
-import { mxcUrlToHttp } from '$utils/matrix';
+import { addRoomIdToMDirect, getDMRoomFor, mxcUrlToHttp } from '$utils/matrix';
+import { isKeyHotkey } from 'is-hotkey';
+import { useAlive } from '$hooks/useAlive';
+import { useDirectRooms } from '$pages/client/direct/useDirectRooms';
+import { getDirectRoomPath } from '$pages/pathUtils';
+import { getMentionContent } from '$utils/room/relations';
+import type { RoomMessageEventContent } from '$types/matrix-sdk';
+import { MsgType, Preset, Visibility } from '$types/matrix-sdk';
+import type { ICreateRoomStateEvent } from '$types/matrix-sdk';
+import { createRoomEncryptionState } from '$components/create-room';
+import { AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
 import { getMemberAvatarMxc, getMemberDisplayName } from '$utils/room/display';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
@@ -32,8 +55,6 @@ import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
 import { useRoomCreators } from '$hooks/useRoomCreators';
 import { useRoomPermissions } from '$hooks/useRoomPermissions';
 import { useMemberPowerCompare } from '$hooks/useMemberPowerCompare';
-import { getDirectCreatePath, withSearchParam } from '$pages/pathUtils';
-import type { DirectCreateSearchParams } from '$pages/paths';
 import { nicknamesAtom } from '$state/nicknames';
 import type { UserProfile } from '$hooks/useUserProfile';
 import { useUserProfile } from '$hooks/useUserProfile';
@@ -54,7 +75,6 @@ import { getMxIdServer } from '$utils/mxIdHelper';
 import { TextViewerContent } from '$components/text-viewer';
 import { areColorsTooSimilar, shadeColor } from '$utils/shadeColor';
 import { ThemeKind, useTheme } from '$hooks/useTheme';
-import { heroMenuItemStyle } from './heroMenuItemStyle';
 import { CreatorChip } from './CreatorChip';
 import { UserInviteAlert, UserBanAlert, UserModeration, UserKickAlert } from './UserModeration';
 import { PowerChip } from './PowerChip';
@@ -494,12 +514,64 @@ export function UserRoomProfile({
     ? (mxcUrlToHttp(mx, parsedBanner, useAuthentication) ?? undefined)
     : undefined;
 
-  const handleMessage = () => {
-    closeUserRoomProfile();
-    const directSearchParam: DirectCreateSearchParams = {
-      userId,
-    };
-    navigate(withSearchParam(getDirectCreatePath(), directSearchParam));
+  const messageInputRef = useRef<HTMLInputElement>(null);
+  const alive = useAlive();
+  const directs = useDirectRooms();
+
+  const [sendState, sendMessage] = useAsyncCallback<string, Error, [string]>(async (body) => {
+    let dmRoomId: string;
+    const existingDmRoomId = getDMRoomFor(mx, userId)?.roomId;
+    if (existingDmRoomId && directs.includes(existingDmRoomId)) {
+      dmRoomId = existingDmRoomId;
+    } else {
+      const initialState: ICreateRoomStateEvent[] = [createRoomEncryptionState()];
+      const result = await mx.createRoom({
+        is_direct: true,
+        invite: [userId],
+        visibility: Visibility.Private,
+        preset: Preset.TrustedPrivateChat,
+        initial_state: initialState,
+        creation_content: {
+          additional_creators: [userId],
+        },
+      });
+      await addRoomIdToMDirect(mx, result.room_id, userId);
+      dmRoomId = result.room_id;
+    }
+
+    await mx.sendMessage(dmRoomId, null, {
+      msgtype: MsgType.Text,
+      body,
+      'm.mentions': getMentionContent([userId], false),
+    } as RoomMessageEventContent);
+
+    return dmRoomId;
+  });
+
+  const sendBusy = sendState.status === AsyncStatus.Loading;
+
+  const handleMessageSubmit: FormEventHandler<HTMLFormElement> = (evt) => {
+    evt.preventDefault();
+    evt.stopPropagation();
+    const input = messageInputRef.current;
+    const body = input?.value.trim();
+    if (!input || !body || sendBusy) return;
+
+    sendMessage(body)
+      .then((dmRoomId) => {
+        if (!alive() || !dmRoomId) return;
+        closeUserRoomProfile();
+        navigate(getDirectRoomPath(dmRoomId));
+      })
+      .catch(() => {
+        if (alive() && messageInputRef.current) messageInputRef.current.focus();
+      });
+  };
+
+  const handleMessageKeyDown: KeyboardEventHandler<HTMLInputElement> = (evt) => {
+    if (isKeyHotkey('escape', evt)) {
+      closeUserRoomProfile();
+    }
   };
 
   const mentionClickHandler = useMentionClickHandler(room.roomId, anchor, position);
@@ -647,22 +719,47 @@ export function UserRoomProfile({
               clearPmp={handleClearPmp}
             />
             {userId !== myUserId && (
-              <Button
-                size="300"
-                variant="Primary"
-                fill="Solid"
-                radii="300"
-                before={profileIcon(ChatCircle, { filled: true })}
-                onClick={handleMessage}
-                className={showCustomHeroCard ? css.UserHeroChipThemed : css.UserHeroChip}
-                style={{
-                  marginLeft: 'auto',
-                  ...(showCustomHeroCard && chipSurfaceStyle ? chipSurfaceStyle : {}),
-                  ...heroMenuItemStyle({}, chipHoverBrightness),
-                }}
+              <Box
+                as="form"
+                onSubmit={handleMessageSubmit}
+                grow="Yes"
+                style={{ minWidth: toRem(220) }}
               >
-                <Text size="B300">Message</Text>
-              </Button>
+                <Input
+                  ref={messageInputRef}
+                  name="messageInput"
+                  placeholder="Message"
+                  variant="SurfaceVariant"
+                  size="400"
+                  radii="300"
+                  autoComplete="off"
+                  autoFocus
+                  disabled={sendBusy}
+                  onKeyDown={handleMessageKeyDown}
+                  before={profileIcon(ChatCircle, { filled: true })}
+                  after={
+                    sendBusy ? (
+                      <Spinner size="200" variant="Secondary" />
+                    ) : (
+                      <Button
+                        type="submit"
+                        variant="Primary"
+                        fill="Solid"
+                        radii="300"
+                        size="300"
+                        aria-label="Send Message"
+                      >
+                        {profileIcon(PaperPlaneTilt)}
+                      </Button>
+                    )
+                  }
+                  style={{
+                    flexGrow: 1,
+                    color: textColor,
+                    ...(showCustomHeroCard && chipSurfaceStyle ? chipSurfaceStyle : {}),
+                  }}
+                />
+              </Box>
             )}
           </Box>
           <UserExtendedSection

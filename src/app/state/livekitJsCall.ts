@@ -37,7 +37,9 @@ export const livekitJsCallSoundAtom = atom(true);
  */
 export const livekitJsCallInitialMediaAppliedAtom = atom(false);
 
-export const isLivekitJsCallActive = (session: LivekitJsCallSession | undefined): boolean =>
+export const isLivekitJsCallActive = (
+  session: LivekitJsCallSession | undefined
+): session is LivekitJsCallSession =>
   session?.lifecycle !== undefined &&
   session.lifecycle !== 'idle' &&
   session.lifecycle !== 'failed';

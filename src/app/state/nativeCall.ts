@@ -49,7 +49,9 @@ export type NativeCallSession = {
 
 export const nativeCallAtom = atom<NativeCallSession | undefined>(undefined);
 
-export const isNativeCallActive = (session: NativeCallSession | undefined): boolean =>
+export const isNativeCallActive = (
+  session: NativeCallSession | undefined
+): session is NativeCallSession =>
   session?.lifecycle !== undefined && session.lifecycle !== 'error';
 
 /**

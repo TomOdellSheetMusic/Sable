@@ -73,6 +73,8 @@ import { useRoomMenuActions } from '$hooks/useRoomMenuActions';
 
 // Call Hooks & Plugins
 import { useCallMembers, useCallSession } from '$hooks/useCall';
+import { useCallSpeakers } from '$hooks/useCallSpeakers';
+import { useCallMemberMediaStates } from '$hooks/useCallMemberMediaState';
 import { useCallEmbed, useCallStart } from '$hooks/useCallEmbed';
 import { callChatAtom } from '$state/callEmbed';
 import { useCallPreferencesAtom } from '$state/hooks/callPreferences';
@@ -347,6 +349,7 @@ export function RoomNavItem({
 
   const callSession = useCallSession(room);
   const callMembers = useCallMembers(room, callSession);
+  const memberMediaStates = useCallMemberMediaStates(room, callMembers);
   const startCall = useCallStart(direct);
   const callEmbed = useCallEmbed();
   const callPref = useAtomValue(useCallPreferencesAtom());
@@ -703,6 +706,8 @@ export function RoomNavItem({
               room={room}
               callMembership={callMembership}
               hideText={hideText}
+              activeSpeakers={speakers}
+              memberMediaStates={memberMediaStates}
             />
           ))}
         </Box>

@@ -80,17 +80,11 @@
     },
     "deep-link": {
       "desktop": {
-        "schemes": [
-          "sable",
-          "moe.sable.app"
-        ]
+        "schemes": ["sable", "moe.sable.app"]
       },
       "mobile": [
         {
-          "scheme": [
-            "sable",
-            "moe.sable.app"
-          ],
+          "scheme": ["sable", "moe.sable.app"],
           "appLink": false
         }
       ]

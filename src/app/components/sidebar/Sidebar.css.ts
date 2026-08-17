@@ -191,6 +191,10 @@ export const SidebarItemBadge = recipe({
         top: toRem(-4),
         left: toRem(-4),
       },
+      call: {
+        top: toRem(-5),
+        right: toRem(-5),
+      },
     },
   },
   defaultVariants: {

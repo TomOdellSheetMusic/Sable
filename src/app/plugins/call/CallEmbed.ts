@@ -18,7 +18,11 @@ import {
 import { CallWidgetDriver } from './CallWidgetDriver';
 import { trimTrailingSlash } from '../../utils/common';
 import { getWindowOrigin, iosApp, isAndroidTauri } from '../../utils/platform';
-import type { ElementCallThemeKind, ElementMediaStateDetail } from './types';
+import type {
+  ElementCallThemeKind,
+  ElementMediaStateDetail,
+  ElementParticipantMediaState,
+} from './types';
 import { color, config } from 'folds';
 import { ElementCallIntent, ElementWidgetActions } from './types';
 import { CallControl } from './CallControl';
@@ -68,6 +72,10 @@ export class CallEmbed {
   private readonly disposables: Array<() => void> = [];
 
   private activeSpeakersListeners = new Set<(userIds: string[]) => void>();
+
+  private participantMediaStateListeners = new Set<
+    (participants: ElementParticipantMediaState[]) => void
+  >();
 
   static getIntent(dm: boolean, ongoing: boolean, video: boolean | undefined): ElementCallIntent {
     if (ongoing) {
@@ -292,6 +300,25 @@ export class CallEmbed {
       })
     );
 
+    // The call widget pushes the per-participant mute state
+    this.disposables.push(
+      this.listenAction(ElementWidgetActions.ParticipantMediaState, (evt) => {
+        evt.preventDefault();
+        this.call.transport.reply(evt.detail as IWidgetApiRequest, {});
+        const data = (evt.detail as { data?: { participants?: unknown } }).data;
+        const participants = data?.participants;
+        if (Array.isArray(participants)) {
+          const list = participants.filter(
+            (p): p is ElementParticipantMediaState =>
+              typeof p === 'object' &&
+              p !== null &&
+              typeof (p as { userId?: unknown }).userId === 'string'
+          );
+          this.participantMediaStateListeners.forEach((listener) => listener(list));
+        }
+      })
+    );
+
     this.start();
   }
 
@@ -308,6 +335,18 @@ export class CallEmbed {
     this.activeSpeakersListeners.add(listener);
     return () => {
       this.activeSpeakersListeners.delete(listener);
+    };
+  }
+
+  /**
+   * Subscribe to per-participant mute state pushed by the call widget.
+   */
+  public onParticipantMediaState(
+    listener: (participants: ElementParticipantMediaState[]) => void
+  ): () => void {
+    this.participantMediaStateListeners.add(listener);
+    return () => {
+      this.participantMediaStateListeners.delete(listener);
     };
   }
 

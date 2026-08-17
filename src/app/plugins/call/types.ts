@@ -20,10 +20,24 @@ export type ElementMediaStateDetail = {
   data?: ElementMediaStatePayload;
 };
 
+/**
+ * Per-participant media (mute) state pushed by the call widget so the host can
+ * show mute indicators for every participant in the call roster.
+ */
+export type ElementParticipantMediaState = {
+  userId: string;
+  audioEnabled?: boolean;
+  videoEnabled?: boolean;
+};
+export type ElementParticipantMediaStateDetail = {
+  data?: { participants?: ElementParticipantMediaState[] };
+};
+
 export enum ElementWidgetActions {
   JoinCall = 'io.element.join',
   HangupCall = 'im.vector.hangup',
   Close = 'io.element.close',
   DeviceMute = 'io.element.device_mute',
   ActiveSpeakers = 'io.element.active_speakers',
+  ParticipantMediaState = 'io.element.participant_media_state',
 }

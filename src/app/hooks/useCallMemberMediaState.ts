@@ -9,39 +9,29 @@ import { buildRtcIdentityMap } from '@sableclient/matrixrtc';
 import type { Room, CallMembership } from '$types/matrix-sdk';
 import { useMatrixClient } from './useMatrixClient';
 import { nativeCallAtom, isNativeCallActive } from '$state/nativeCall';
-import {
-  livekitJsCallAtom,
-  isLivekitJsCallActive,
-  livekitJsCallSoundAtom,
-} from '$state/livekitJsCall';
+import { livekitJsCallAtom, isLivekitJsCallActive } from '$state/livekitJsCall';
 import { callEmbedAtom } from '$state/callEmbed';
 import { CallControlEvent } from '$plugins/call/CallControl';
+import type { ElementParticipantMediaState } from '$plugins/call/types';
 
 /**
- * The media (mute/camera/deafen) state of a call participant that the room
+ * The media (mute/camera) state of a call participant that the room
  * navigation can reflect next to their avatar.
- *
- * `deafened` is the local notion of muting the call's audio output (there is
- * no per-participant "deafen" on any backend). Only the local participant gets
- * a `deafened` value.
  */
 export type CallMemberMediaState = {
   /** Microphone is muted (or has no live audio track). */
   micMuted?: boolean;
-  /** The local user has muted the call's audio output. */
-  deafened?: boolean;
 };
 
 /**
- * Reactively computes the mute/camera/deafen state of each call participant
+ * Reactively computes the mute/camera state of each call participant
  * currently displayed in the room navigation.
  *
  * The live mute state is only known once the client is actually in a call, and
  * only the backends that expose it contribute entries:
  *  - native calls report per-participant track mute state.
- *  - LiveKit JS calls report per-participant microphone/camera state and the
- *    local audio-output state.
- *  - the Element Call widget only reports the local media state.
+ *  - LiveKit JS calls report per-participant microphone/camera state.
+ *  - the Element Call widget reports per-participant media state.
  *
  * Returns a Map keyed by Matrix user ID, always containing an entry for the
  * local user when the given room has an active call.
@@ -54,7 +44,6 @@ export const useCallMemberMediaStates = (
 
   const nativeCall = useAtomValue(nativeCallAtom);
   const livekitJsCall = useAtomValue(livekitJsCallAtom);
-  const soundEnabled = useAtomValue(livekitJsCallSoundAtom);
   const callEmbed = useAtomValue(callEmbedAtom);
 
   const roomId = room.roomId;
@@ -108,6 +97,17 @@ export const useCallMemberMediaStates = (
     };
   }, [callEmbed, roomId]);
 
+  // Subscribe to the Element Call widget's per-participant mute state.
+  const [widgetParticipants, setWidgetParticipants] = useState<ElementParticipantMediaState[]>([]);
+  useEffect(() => {
+    if (!callEmbed || callEmbed.roomId !== roomId) return undefined;
+    const unsubscribe = callEmbed.onParticipantMediaState(setWidgetParticipants);
+    return () => {
+      unsubscribe();
+      setWidgetParticipants([]);
+    };
+  }, [callEmbed, roomId]);
+
   const userIdByIdentity = useMemo(() => buildRtcIdentityMap(callMembers), [callMembers]);
   const localUserId = mx.getSafeUserId?.() ?? mx.getUserId?.() ?? '';
 
@@ -127,20 +127,20 @@ export const useCallMemberMediaStates = (
     livekitRoom
   ) {
     const local = livekitRoom.localParticipant;
-    states.set(localUserId, {
-      micMuted: !local.isMicrophoneEnabled,
-      deafened: !soundEnabled,
-    });
+    states.set(localUserId, { micMuted: !local.isMicrophoneEnabled });
     for (const [identity, participant] of livekitRoom.remoteParticipants) {
       const userId = userIdByIdentity.get(identity);
       if (userId) states.set(userId, { micMuted: !participant.isMicrophoneEnabled });
     }
   } else if (callEmbed && callEmbed.roomId === roomId) {
     const control = callEmbed.control;
-    states.set(localUserId, {
-      micMuted: !control.microphone,
-      deafened: !control.sound,
-    });
+    states.set(localUserId, { micMuted: !control.microphone });
+    for (const participant of widgetParticipants) {
+      if (!participant.userId) continue;
+      states.set(participant.userId, {
+        micMuted: participant.audioEnabled === false,
+      });
+    }
   }
 
   return states;

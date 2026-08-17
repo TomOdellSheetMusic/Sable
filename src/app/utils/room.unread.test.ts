@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { KnownMembership, NotificationCountType } from '$types/matrix-sdk';
 import type { MatrixClient, MatrixEvent, Room } from '$types/matrix-sdk';
-import { getUnreadInfo, getUnreadInfosForRooms } from './room/unread';
+import { getUnreadInfo, getUnreadInfosForRooms, isNotificationEvent } from './room/unread';
 
 const SPACE = '!space:example.com';
 const ROOM_UNREAD = '!unread:example.com';
@@ -12,13 +12,19 @@ const MISSING = '!missing:example.com';
 const ME = '@user:example.com';
 const OTHER = '@other:example.com';
 
-const createEvent = (id: string, sender: string, type = 'm.room.message'): MatrixEvent =>
+const createEvent = (
+  id: string,
+  sender: string,
+  type = 'm.room.message',
+  relation?: { rel_type: string; event_id?: string }
+): MatrixEvent =>
   ({
     getId: () => id,
     getSender: () => sender,
     getType: () => type,
     isRedacted: () => false,
-    getRelation: () => undefined,
+    isSending: () => false,
+    getRelation: () => relation,
   }) as unknown as MatrixEvent;
 
 const createClient = (rooms: Record<string, Room>, pushRulesOverride?: unknown[]): MatrixClient =>
@@ -77,7 +83,8 @@ const createRoom = (
       getEvents: () => events,
       getPaginationToken: () => paginationToken,
     }),
-    getRoomUnreadNotificationCount: () => total,
+    getRoomUnreadNotificationCount: (type: string) =>
+      type === NotificationCountType.Highlight ? highlight : total,
     hasUserReadEvent: () => false,
     getAccountData: (type: string) =>
       fullyRead && type === 'm.fully_read'
@@ -308,6 +315,49 @@ describe('getUnreadInfosForRooms', () => {
     expect(deleted).toContain(ROOM_UNREAD);
   });
 
+  // readUpTo is null because the receipt does not survive a restart on some servers.
+  it('does not badge a room whose fully-read marker covers the loaded timeline', () => {
+    const room = createRoom(ROOM_UNREAD, {
+      readUpTo: null,
+      total: 3,
+      fullyRead: '$b',
+      events: [createEvent('$a', OTHER), createEvent('$b', OTHER)],
+    });
+    const mx = bindRoom(room);
+
+    const { unread, deleted } = getUnreadInfosForRooms(mx, [ROOM_UNREAD]);
+    expect(unread).toHaveLength(0);
+    expect(deleted).toContain(ROOM_UNREAD);
+  });
+
+  it('clamps a stale highlight count when the fully-read marker covers the timeline', () => {
+    const room = createRoom(ROOM_UNREAD, {
+      readUpTo: null,
+      total: 2,
+      highlight: 2,
+      fullyRead: '$b',
+      events: [createEvent('$a', OTHER), createEvent('$b', OTHER)],
+    });
+    const mx = bindRoom(room);
+
+    const { unread, deleted } = getUnreadInfosForRooms(mx, [ROOM_UNREAD]);
+    expect(unread).toHaveLength(0);
+    expect(deleted).toContain(ROOM_UNREAD);
+  });
+
+  it('still badges when the fully-read marker is behind newer messages', () => {
+    const room = createRoom(ROOM_UNREAD, {
+      readUpTo: null,
+      total: 2,
+      fullyRead: '$a',
+      events: [createEvent('$a', OTHER), createEvent('$b', OTHER), createEvent('$c', OTHER)],
+    });
+    const mx = bindRoom(room);
+
+    const { unread } = getUnreadInfosForRooms(mx, [ROOM_UNREAD]);
+    expect(unread.find((u) => u.roomId === ROOM_UNREAD)?.total).toBe(2);
+  });
+
   it('deletes rooms whose unread has dropped to zero', () => {
     const emptyRoom = createRoom(ROOM_EMPTY, { total: 0, highlight: 0, events: [] });
     const mx = createClient({ [ROOM_EMPTY]: emptyRoom });
@@ -316,5 +366,94 @@ describe('getUnreadInfosForRooms', () => {
     const { unread, deleted } = getUnreadInfosForRooms(mx, [ROOM_EMPTY]);
     expect(unread).toHaveLength(0);
     expect(deleted).toContain(ROOM_EMPTY);
+  });
+});
+
+describe('isNotificationEvent', () => {
+  const room = createRoom(ROOM_UNREAD, {
+    events: [createEvent('$mine', ME), createEvent('$theirs', OTHER)],
+  });
+
+  it('counts messages, encrypted messages and stickers', () => {
+    expect(isNotificationEvent(createEvent('$a', OTHER, 'm.room.message'))).toBe(true);
+    expect(isNotificationEvent(createEvent('$a', OTHER, 'm.room.encrypted'))).toBe(true);
+    expect(isNotificationEvent(createEvent('$a', OTHER, 'm.sticker'))).toBe(true);
+  });
+
+  it('ignores membership and other state events', () => {
+    expect(isNotificationEvent(createEvent('$a', OTHER, 'm.room.member'))).toBe(false);
+    expect(isNotificationEvent(createEvent('$a', OTHER, 'm.room.topic'))).toBe(false);
+    expect(isNotificationEvent(createEvent('$a', OTHER, 'm.room.create'))).toBe(false);
+  });
+
+  it('ignores edits', () => {
+    const edit = createEvent('$a', OTHER, 'm.room.message', {
+      rel_type: 'm.replace',
+      event_id: '$theirs',
+    });
+    expect(isNotificationEvent(edit, room, ME)).toBe(false);
+  });
+
+  it('counts a reaction only when it targets our own message', () => {
+    const toMine = createEvent('$a', OTHER, 'm.reaction', {
+      rel_type: 'm.annotation',
+      event_id: '$mine',
+    });
+    const toTheirs = createEvent('$b', OTHER, 'm.reaction', {
+      rel_type: 'm.annotation',
+      event_id: '$theirs',
+    });
+
+    expect(isNotificationEvent(toMine, room, ME)).toBe(true);
+    expect(isNotificationEvent(toTheirs, room, ME)).toBe(false);
+  });
+
+  it('ignores a reaction when the target is unknown or there is no context', () => {
+    const relation = { rel_type: 'm.annotation', event_id: '$gone' };
+    expect(isNotificationEvent(createEvent('$a', OTHER, 'm.reaction', relation), room, ME)).toBe(
+      false
+    );
+    expect(isNotificationEvent(createEvent('$a', OTHER, 'm.reaction', relation))).toBe(false);
+    expect(
+      isNotificationEvent(
+        createEvent('$a', OTHER, 'm.reaction', { rel_type: 'm.annotation' }),
+        room,
+        ME
+      )
+    ).toBe(false);
+  });
+
+  it('counts a threaded reply like a plain message', () => {
+    const reply = createEvent('$a', OTHER, 'm.room.message', {
+      rel_type: 'm.thread',
+      event_id: '$theirs',
+    });
+    expect(isNotificationEvent(reply, room, ME)).toBe(true);
+  });
+});
+
+describe('getUnreadInfo count sources', () => {
+  it('keeps the SDK counts for a room with activity but no receipt', () => {
+    const room = createRoom(ROOM_UNREAD, {
+      readUpTo: null,
+      total: 7,
+      highlight: 2,
+      events: [createEvent('$a', OTHER)],
+    });
+    bindRoom(room);
+
+    expect(getUnreadInfo(room)).toEqual({ roomId: ROOM_UNREAD, highlight: 2, total: 7 });
+  });
+
+  it('does not recount from the boundary while a highlight count survives', () => {
+    const room = createRoom(ROOM_UNREAD, {
+      readUpTo: '$a',
+      total: 0,
+      highlight: 4,
+      events: [createEvent('$a', OTHER), createEvent('$b', OTHER), createEvent('$c', OTHER)],
+    });
+    bindRoom(room);
+
+    expect(getUnreadInfo(room)).toEqual({ roomId: ROOM_UNREAD, highlight: 4, total: 4 });
   });
 });

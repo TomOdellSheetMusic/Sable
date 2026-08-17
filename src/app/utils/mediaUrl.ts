@@ -1,4 +1,4 @@
-import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
 import type { MatrixClient } from '$types/matrix-sdk';
 import { getCurrentMediaSessionScope } from './mediaTransport';
 
@@ -106,6 +106,13 @@ export const addTauriMediaRetryRevision = (mediaUrl: string, revision: number): 
   const target = getTauriMediaRetryTarget(mediaUrl, revision);
   if (!target) return mediaUrl;
   return rewriteAuthenticatedMediaUrl(target) ?? mediaUrl;
+};
+
+// A media element cannot play from the `sable-media` scheme (MEDIA_ERR_SRC_NOT_SUPPORTED),
+// so video/audio sources go through the loopback HTTP origin.
+export const prepareLoopbackMedia = async (source: string): Promise<string> => {
+  if (!isTauri()) return source;
+  return invoke<string>('prepare_loopback_media', { url: source });
 };
 
 export const mxcUrlToHttp = (

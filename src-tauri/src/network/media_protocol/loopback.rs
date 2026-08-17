@@ -11,6 +11,7 @@ use std::{
 use sha2::{Digest, Sha256};
 use tauri::http::{header, Response, StatusCode};
 
+use super::response::is_webview_origin;
 use super::session::MediaSession;
 
 pub(super) struct LoopbackMediaServer {
@@ -91,7 +92,7 @@ fn capability(session: &MediaSession, cache_key: &str) -> String {
 }
 
 fn serve(mut stream: TcpStream, routes: Arc<RwLock<HashMap<String, CachedMedia>>>) {
-    let Ok((method, capability, range)) = parse_request(&stream) else {
+    let Ok((method, capability, range, origin)) = parse_request(&stream) else {
         let _ = write_status(&mut stream, 400, "Bad Request", &[]);
         return;
     };
@@ -132,14 +133,16 @@ fn serve(mut stream: TcpStream, routes: Arc<RwLock<HashMap<String, CachedMedia>>
         ("Content-Length", length.to_string()),
         ("Accept-Ranges", "bytes".to_owned()),
         (
-            "Access-Control-Allow-Origin",
-            "https://tauri.localhost".to_owned(),
-        ),
-        (
             "Cache-Control",
             "private, max-age=31536000, immutable".to_owned(),
         ),
     ];
+    // The webview origin differs per platform, and media elements request with
+    // crossOrigin="anonymous". Cached `immutable`, so the cache must key on Origin.
+    if let Some(origin) = origin.filter(|origin| is_webview_origin(origin)) {
+        headers.push(("Access-Control-Allow-Origin", origin));
+        headers.push(("Vary", "Origin".to_owned()));
+    }
     if partial {
         headers.push(("Content-Range", format!("bytes {start}-{end}/{total}")));
     }
@@ -171,7 +174,9 @@ fn serve(mut stream: TcpStream, routes: Arc<RwLock<HashMap<String, CachedMedia>>
     }
 }
 
-fn parse_request(stream: &TcpStream) -> Result<(String, String, Option<String>), ()> {
+type ParsedRequest = (String, String, Option<String>, Option<String>);
+
+fn parse_request(stream: &TcpStream) -> Result<ParsedRequest, ()> {
     let mut reader = BufReader::new(stream);
     let mut request_line = String::new();
     reader.read_line(&mut request_line).map_err(|_| ())?;
@@ -182,6 +187,7 @@ fn parse_request(stream: &TcpStream) -> Result<(String, String, Option<String>),
         return Err(());
     }
     let mut range = None;
+    let mut origin = None;
     let mut line = String::new();
     loop {
         line.clear();
@@ -189,17 +195,18 @@ fn parse_request(stream: &TcpStream) -> Result<(String, String, Option<String>),
         if line == "\r\n" || line.is_empty() {
             break;
         }
-        if let Some(value) = line
-            .strip_prefix("Range:")
-            .or_else(|| line.strip_prefix("range:"))
-        {
-            range = Some(value.trim().to_owned());
+        if let Some((name, value)) = line.split_once(':') {
+            if name.eq_ignore_ascii_case("range") {
+                range = Some(value.trim().to_owned());
+            } else if name.eq_ignore_ascii_case("origin") {
+                origin = Some(value.trim().to_owned());
+            }
         }
         if line.len() > 8192 {
             return Err(());
         }
     }
-    Ok((method, path[1..].to_owned(), range))
+    Ok((method, path[1..].to_owned(), range, origin))
 }
 
 fn parse_range(value: &str, total: u64) -> Option<(u64, u64, bool)> {
@@ -236,4 +243,59 @@ fn write_status(
         write!(stream, "{name}: {value}\r\n")?;
     }
     stream.write_all(b"\r\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(raw: &'static str) -> Result<ParsedRequest, ()> {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("loopback test port");
+        let addr = listener.local_addr().expect("loopback test address");
+        let client = thread::spawn(move || {
+            let mut stream = TcpStream::connect(addr).expect("loopback test connect");
+            stream
+                .write_all(raw.as_bytes())
+                .expect("loopback test write");
+        });
+        let (stream, _) = listener.accept().expect("loopback test accept");
+        let parsed = parse_request(&stream);
+        client.join().expect("loopback test client");
+        parsed
+    }
+
+    #[test]
+    fn extracts_range_and_origin_regardless_of_header_case() {
+        let (method, capability, range, origin) = parse(
+            "GET /abc123 HTTP/1.1\r\nrange: bytes=10-19\r\nORIGIN: tauri://localhost\r\n\r\n",
+        )
+        .expect("request should parse");
+
+        assert_eq!(method, "GET");
+        assert_eq!(capability, "abc123");
+        assert_eq!(range.as_deref(), Some("bytes=10-19"));
+        assert_eq!(origin.as_deref(), Some("tauri://localhost"));
+    }
+
+    #[test]
+    fn origin_is_absent_when_not_sent() {
+        let (_, _, range, origin) =
+            parse("GET /abc123 HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").expect("request should parse");
+
+        assert!(range.is_none());
+        assert!(origin.is_none());
+    }
+
+    #[test]
+    fn every_platform_webview_origin_is_granted_cors() {
+        for origin in [
+            "tauri://localhost",
+            "http://tauri.localhost",
+            "https://tauri.localhost",
+        ] {
+            assert!(is_webview_origin(origin), "{origin} should be granted");
+        }
+        assert!(!is_webview_origin("https://evil.example.org"));
+        assert!(!is_webview_origin("null"));
+    }
 }

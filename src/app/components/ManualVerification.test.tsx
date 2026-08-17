@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CryptoApi } from '$types/matrix-sdk';
 import type { SecretStorageKeyContent } from '$types/matrix/accountData';
@@ -40,6 +41,13 @@ const submitRecoveryKey = (value: string) => {
   fireEvent.submit(form);
 };
 
+const renderTile = (queryClient: QueryClient) =>
+  render(
+    <QueryClientProvider client={queryClient}>
+      <ManualVerificationTile secretStorageKeyId={KEY_ID} secretStorageKeyContent={KEY_CONTENT} />
+    </QueryClientProvider>
+  );
+
 describe('ManualVerificationTile', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -52,9 +60,7 @@ describe('ManualVerificationTile', () => {
   });
 
   it('refreshes cross-signing public keys before importing the recovery key', async () => {
-    render(
-      <ManualVerificationTile secretStorageKeyId={KEY_ID} secretStorageKeyContent={KEY_CONTENT} />
-    );
+    renderTile(new QueryClient());
 
     submitRecoveryKey('valid-key');
 
@@ -62,5 +68,16 @@ describe('ManualVerificationTile', () => {
     expect(storePrivateKey).toHaveBeenCalledWith(KEY_ID, recoveryKey);
     expect(processDeviceLists).toHaveBeenCalledWith({ changed: ['@me:example.org'] });
     expect(bootstrapCrossSigning).toHaveBeenCalledAfter(processDeviceLists);
+  });
+
+  it('invalidates the cached verification status after bootstrapping', async () => {
+    const queryClient = new QueryClient();
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+    renderTile(queryClient);
+
+    submitRecoveryKey('valid-key');
+
+    await waitFor(() => expect(screen.getByText('Device verified!')).toBeInTheDocument());
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['device-verification'] });
   });
 });

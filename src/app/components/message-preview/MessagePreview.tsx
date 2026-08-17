@@ -147,7 +147,7 @@ function renderEncryptedDecrypted(
   event: MatrixEvent,
   displayName: string,
   decryptedEvent: MatrixEvent,
-  eventTimeline: NonNullable<ReturnType<Room['getTimelineForEvent']>>
+  eventTimeline: ReturnType<Room['getTimelineForEvent']>
 ) {
   const eventId = event.getId()!;
   if (decryptedEvent.isRedacted()) return <RedactedContent />;
@@ -165,7 +165,9 @@ function renderEncryptedDecrypted(
     );
   }
   if (decryptedType === messageType) {
-    const editedEvent = getEditedEvent(eventId, decryptedEvent, eventTimeline.getTimelineSet());
+    const editedEvent = eventTimeline
+      ? getEditedEvent(eventId, decryptedEvent, eventTimeline.getTimelineSet())
+      : undefined;
     const getContent = (() =>
       editedEvent?.getContent()?.['m.new_content'] ??
       decryptedEvent.getContent()) as GetContentCallback;
@@ -193,9 +195,10 @@ function renderEncrypted(
 ) {
   const eventId = event.getId()!;
   const eventTimeline = ctx.room.getTimelineForEvent(eventId);
-  const decryptedEvent = eventTimeline?.getEvents().find((item) => item.getId() === eventId);
-
-  if (!decryptedEvent || !eventTimeline) return <MessageNotDecryptedContent />;
+  // Previews are also rendered for events outside any loaded timeline (the
+  // notification inbox), so fall back to the event we were handed.
+  const decryptedEvent =
+    eventTimeline?.getEvents().find((item) => item.getId() === eventId) ?? event;
 
   return (
     <EncryptedContent mEvent={decryptedEvent}>

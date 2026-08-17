@@ -1442,7 +1442,7 @@ export function RoomTimeline({
             radii="Pill"
             outlined
             before={chipIcon(Checks)}
-            onClick={() => markAsRead(mx, room.roomId, hideReads)}
+            onClick={() => markAsRead(mx, room.roomId, hideReads, true)}
           >
             <Text size="L400">Mark as Read</Text>
           </Chip>

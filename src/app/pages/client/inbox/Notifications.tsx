@@ -26,6 +26,7 @@ import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
 import { showToast } from '$state/toast';
 import { markAsRead } from '$utils/notifications';
+import { fetchNotificationEvent } from '$utils/notificationEvent';
 import { getRoomAvatarUrl } from '$utils/room/display';
 import { useRoomUnread } from '$state/hooks/unread';
 import { roomToUnreadAtom } from '$state/room/roomToUnread';
@@ -74,24 +75,25 @@ function NotificationItem({
     () => room.findEventById(notification.event.event_id),
     [room, notification.event.event_id]
   );
-  const event = useMemo(
-    () => liveEvent ?? new MatrixEvent(notification.event),
-    [liveEvent, notification.event]
-  );
-  const [decryptedEvent, setDecryptedEvent] = useState<MatrixEvent>();
+  const storedEvent = useMemo(() => new MatrixEvent(notification.event), [notification.event]);
+  const [remoteEvent, setRemoteEvent] = useState<MatrixEvent>();
 
   useEffect(() => {
-    setDecryptedEvent(undefined);
-    if (liveEvent || !event.isEncrypted()) return undefined;
+    setRemoteEvent(undefined);
+    if (liveEvent) return undefined;
+
     let mounted = true;
-    void mx
-      .decryptEventIfNeeded(event)
-      .then(() => mounted && setDecryptedEvent(event))
+    fetchNotificationEvent(mx, room.roomId, notification.event.event_id)
+      .then((event) => mounted && setRemoteEvent(event))
+      // Offline, or the event is gone: storedEvent stays as the fallback.
       .catch(() => undefined);
+
     return () => {
       mounted = false;
     };
-  }, [event, liveEvent, mx]);
+  }, [mx, room.roomId, notification.event.event_id, liveEvent]);
+
+  const event = liveEvent ?? remoteEvent ?? storedEvent;
 
   const handleOpen: MouseEventHandler<HTMLButtonElement> = (evt) => {
     evt.stopPropagation();
@@ -107,7 +109,7 @@ function NotificationItem({
     >
       <MessagePreview
         room={room}
-        event={decryptedEvent ?? event}
+        event={event}
         renderContent={renderContent}
         actions={
           <Box shrink="No" gap="200" alignItems="Center">
@@ -182,7 +184,7 @@ function NotificationRowItem({
               variant="Primary"
               radii="Pill"
               onClick={() => {
-                void markAsRead(mx, room.roomId, hideReads)
+                void markAsRead(mx, room.roomId, hideReads, true)
                   .then(onMarkRead)
                   .catch(() => showToast('Unable to mark this room as read.'));
               }}

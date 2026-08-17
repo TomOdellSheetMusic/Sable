@@ -123,7 +123,12 @@ fn main() {
         tauri_runtime_cef::set_permission_policy(move |request, responder| {
             use tauri_runtime_cef::{DenyReason, PermissionKind};
 
-            if request.webview_label != "main" {
+            if request.webview_label != "main"
+                || !request
+                    .origin
+                    .as_ref()
+                    .is_some_and(|origin| origin.is_app_local())
+            {
                 return responder.deny(DenyReason::NoPolicy);
             }
 

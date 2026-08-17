@@ -457,7 +457,6 @@ pub fn run() {
             network::media_protocol::set_media_session,
             network::media_protocol::clear_media_session,
             network::media_protocol::set_media_encryption,
-            #[cfg(target_os = "android")]
             network::media_protocol::prepare_loopback_media,
             sentry::set_native_sentry_enabled,
             share_inbox::share_inbox_drain,

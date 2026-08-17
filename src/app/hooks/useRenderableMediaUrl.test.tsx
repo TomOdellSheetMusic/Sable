@@ -17,10 +17,13 @@ const mediaTransport = vi.hoisted(() => ({
 
 const tauriApi = vi.hoisted(() => ({
   isTauri: vi.fn<() => boolean>(),
+  invoke: vi.fn<(cmd: string, args: { url: string }) => Promise<string>>(),
   convertFileSrc: vi.fn<(url: string, protocol: string) => string>(
     (url: string, protocol: string) => `${protocol}://${url}`
   ),
 }));
+
+const LOOPBACK_URL = 'http://127.0.0.1:45678/capability';
 
 vi.mock('$utils/swMediaAuth', () => swMediaAuth);
 vi.mock('$utils/mediaTransport', () => mediaTransport);
@@ -39,6 +42,8 @@ describe('useRenderableMediaUrl', () => {
     mediaTransport.getCurrentMediaSessionScope.mockReset();
     mediaTransport.getCurrentMediaSessionScope.mockReturnValue('anonymous');
     tauriApi.isTauri.mockReset();
+    tauriApi.invoke.mockReset();
+    tauriApi.invoke.mockResolvedValue(LOOPBACK_URL);
     tauriApi.convertFileSrc.mockReset();
     tauriApi.convertFileSrc.mockImplementation(
       (url: string, protocol: string) => `${protocol}://${url}`
@@ -209,9 +214,10 @@ describe('useRenderableMediaUrl', () => {
       'https://matrix.example.org/_matrix/client/v1/media/thumbnail/example.org/abc123?width=96&height=96';
     const { result } = renderHook(() => useRenderableMediaUrl(rawAuthUrl));
 
-    expect(result.current).toBe(
-      `sable-media://${rawAuthUrl}&__sable_media_cache=3&__sable_media_session=anonymous`
-    );
+    await waitFor(() => expect(result.current).toBe(LOOPBACK_URL));
+    expect(tauriApi.invoke).toHaveBeenCalledWith('prepare_loopback_media', {
+      url: `sable-media://${rawAuthUrl}&__sable_media_cache=3&__sable_media_session=anonymous`,
+    });
     expect(tauriApi.convertFileSrc).toHaveBeenCalledWith(rawAuthUrl, 'sable-media');
   });
 
@@ -223,9 +229,10 @@ describe('useRenderableMediaUrl', () => {
       'sable-media://https://matrix.example.org/_matrix/client/v1/media/thumbnail/example.org/abc123';
     const { result } = renderHook(() => useRenderableMediaUrl(rewrittenUrl));
 
-    expect(result.current).toBe(
-      `${rewrittenUrl}?__sable_media_cache=3&__sable_media_session=anonymous`
-    );
+    await waitFor(() => expect(result.current).toBe(LOOPBACK_URL));
+    expect(tauriApi.invoke).toHaveBeenCalledWith('prepare_loopback_media', {
+      url: `${rewrittenUrl}?__sable_media_cache=3&__sable_media_session=anonymous`,
+    });
     expect(tauriApi.convertFileSrc).not.toHaveBeenCalled();
   });
 
@@ -235,7 +242,10 @@ describe('useRenderableMediaUrl', () => {
 
     const { result } = renderHook(() => useRenderableMediaUrl('https://example.org/avatar.png'));
 
-    expect(result.current).toBe('https://example.org/avatar.png');
+    await waitFor(() => expect(result.current).toBe(LOOPBACK_URL));
+    expect(tauriApi.invoke).toHaveBeenCalledWith('prepare_loopback_media', {
+      url: 'https://example.org/avatar.png',
+    });
     expect(tauriApi.convertFileSrc).not.toHaveBeenCalled();
   });
 });

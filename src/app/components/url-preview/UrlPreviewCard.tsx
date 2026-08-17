@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import type { MutableRefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { MatrixClient } from '$types/matrix-sdk';
 import type { IPreviewUrlResponse } from '$types/matrix-sdk';
 import { Box, IconButton, Scroll, Spinner, Text, as, color, config, toRem } from 'folds';
@@ -12,6 +13,7 @@ import * as css from './UrlPreviewCard.css';
 import * as urlPreviewChrome from './UrlPreview.css';
 import { UrlPreview, UrlPreviewContent, UrlPreviewDescription } from './UrlPreview';
 import { AudioContent, ImageContent, VideoContent } from '../message';
+import { LinePlaceholder } from '../message/placeholder';
 import { Image, MediaControl, Video } from '../media';
 import { ImageViewer } from '../image-viewer';
 import { useSetting } from '$state/hooks/settings';
@@ -36,6 +38,28 @@ const getClientCache = (mx: MatrixClient): Map<string, Promise<IPreviewUrlRespon
     previewRequestCache.set(mx, clientCache);
   }
   return clientCache;
+};
+
+// Settled outcomes are kept so a row scrolled back into view renders at its final size.
+type SettledPreview = { data: IPreviewUrlResponse } | { failed: true };
+
+const PREVIEW_RESULT_LIMIT = 500;
+const previewResultCache = new WeakMap<MatrixClient, Map<string, SettledPreview>>();
+
+const getResultCache = (mx: MatrixClient): Map<string, SettledPreview> => {
+  let resultCache = previewResultCache.get(mx);
+  if (!resultCache) {
+    resultCache = new Map();
+    previewResultCache.set(mx, resultCache);
+  }
+  return resultCache;
+};
+
+const rememberPreview = (mx: MatrixClient, url: string, settled: SettledPreview): void => {
+  const resultCache = getResultCache(mx);
+  resultCache.set(url, settled);
+  const oldest = resultCache.keys().next();
+  if (resultCache.size > PREVIEW_RESULT_LIMIT && !oldest.done) resultCache.delete(oldest.value);
 };
 
 const openMediaInNewTab = async (url: string | undefined) => {
@@ -99,17 +123,28 @@ export const UrlPreviewCard = as<
   const [linkPreviewImageMaxHeight] = useSetting(settingsAtom, 'linkPreviewImageMaxHeight');
   const [mediaAutoLoad] = useSetting(settingsAtom, 'mediaAutoLoad');
 
+  const settled = urlPreview && ts ? getResultCache(mx).get(url) : undefined;
+
   const [previewStatus, loadPreview] = useAsyncCallback(
     useCallback(() => {
       if (!ts && !bundle) return Promise.resolve(null);
       if (urlPreview && ts) {
+        const remembered = getResultCache(mx).get(url);
+        if (remembered) {
+          return 'failed' in remembered
+            ? Promise.reject(new Error('preview previously refused'))
+            : Promise.resolve(remembered.data);
+        }
         const clientCache = getClientCache(mx);
         const cached = clientCache.get(url);
         if (cached !== undefined) return cached;
         const previewResult = mx?.getUrlPreview(url, ts);
         if (!previewResult) return Promise.resolve(null);
         clientCache.set(url, previewResult);
-        previewResult.finally(() => clientCache.delete(url)).catch(() => {});
+        previewResult
+          .then((data) => rememberPreview(mx, url, { data }))
+          .catch(() => rememberPreview(mx, url, { failed: true }))
+          .finally(() => clientCache.delete(url));
         return previewResult;
       }
       return Promise.resolve(bundle);
@@ -122,7 +157,49 @@ export const UrlPreviewCard = as<
     loadPreview().catch(() => undefined);
   }, [url, loadPreview]);
 
-  if (previewStatus.status === AsyncStatus.Error) return null;
+  const failed = previewStatus.status === AsyncStatus.Error || (settled && 'failed' in settled);
+  const pending = !failed && previewStatus.status !== AsyncStatus.Success && !settled;
+
+  // Hold the placeholder height until the card is off screen, so a shorter or refused
+  // preview does not pull the timeline up under the reader.
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const placeholderHeightRef = useRef<number>();
+  const [released, setReleased] = useState(false);
+
+  useLayoutEffect(() => {
+    if (pending && rootRef.current) placeholderHeightRef.current = rootRef.current.offsetHeight;
+  });
+
+  const reservedHeight = released ? undefined : placeholderHeightRef.current;
+
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || released || pending || reservedHeight === undefined) return () => {};
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry && !entry.isIntersecting) setReleased(true);
+      },
+      // Well clear of the viewport: releasing at the edge is where virtua compensates least.
+      { rootMargin: '800px 0px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [released, pending, reservedHeight]);
+
+  const setRootRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      rootRef.current = node;
+      if (typeof ref === 'function') ref(node);
+      else if (ref) (ref as MutableRefObject<HTMLDivElement | null>).current = node;
+    },
+    [ref]
+  );
+
+  if (failed) {
+    return reservedHeight === undefined ? null : (
+      <div ref={rootRef} style={{ height: reservedHeight }} aria-hidden />
+    );
+  }
 
   const renderContent = (prev: IPreviewUrlResponse) => {
     const siteName = prev['og:site_name'];
@@ -335,10 +412,17 @@ export const UrlPreviewCard = as<
     );
   };
 
+  const resolved: IPreviewUrlResponse | null | undefined =
+    settled && !('failed' in settled)
+      ? settled.data
+      : previewStatus.status === AsyncStatus.Success
+        ? (previewStatus.data as IPreviewUrlResponse | null)
+        : undefined;
+
   let previewContent;
-  if (previewStatus.status === AsyncStatus.Success) {
-    previewContent = previewStatus.data ? (
-      renderContent(previewStatus.data)
+  if (resolved !== undefined) {
+    previewContent = resolved ? (
+      renderContent(resolved)
     ) : (
       <UrlPreviewContent>
         <Text
@@ -356,18 +440,38 @@ export const UrlPreviewCard = as<
       </UrlPreviewContent>
     );
   } else {
+    // Same shape as a resolved card, so it does not grow when the preview lands.
     previewContent = (
-      <Box grow="Yes" alignItems="Center" justifyContent="Center">
-        <Spinner variant="Secondary" size="400" />
+      <Box grow="Yes" direction="Column" style={{ overflow: 'hidden', width: '100%' }}>
+        <UrlPreviewContent style={{ minWidth: 0 }}>
+          <LinePlaceholder style={{ maxWidth: toRem(160) }} />
+          <LinePlaceholder style={{ maxWidth: toRem(240) }} />
+          <LinePlaceholder />
+          <LinePlaceholder style={{ maxWidth: toRem(280) }} />
+        </UrlPreviewContent>
+        <Box
+          shrink="No"
+          alignItems="Center"
+          justifyContent="Center"
+          className={urlPreviewChrome.UrlPreviewMediaWell}
+          style={{
+            width: '100%',
+            maxHeight: toRem(linkPreviewImageMaxHeight),
+            aspectRatio: '16 / 9',
+          }}
+        >
+          <Spinner variant="Secondary" size="400" />
+        </Box>
       </Box>
     );
   }
   return (
     <UrlPreview
       {...props}
-      ref={ref}
+      ref={setRootRef}
       style={{
         alignSelf: 'start',
+        minHeight: reservedHeight,
       }}
     >
       {previewContent}

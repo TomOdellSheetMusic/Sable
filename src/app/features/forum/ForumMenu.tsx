@@ -52,7 +52,7 @@ export const ForumMenu = forwardRef<HTMLDivElement, ForumMenuProps>(
     const [invitePrompt, setInvitePrompt] = useState(false);
 
     const handleMarkAsRead = () => {
-      markAsRead(mx, room.roomId, hideReads);
+      markAsRead(mx, room.roomId, hideReads, true);
       requestClose();
     };
 

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type CryptoApi, type CryptoEventHandlerMap, CryptoEvent } from '$types/matrix-sdk';
 import { verifiedDevice } from '$utils/matrix-crypto';
@@ -129,6 +129,16 @@ const useInvalidateDeviceVerification = (crypto: CryptoApi | undefined): void =>
       }
     };
   }, [mx, crypto, queryClient]);
+};
+
+// Cross-signing bootstrap signs this device without emitting a CryptoEvent, so none
+// of the listeners above fire for it.
+export const useRefreshDeviceVerificationStatus = (): (() => void) => {
+  const queryClient = useQueryClient();
+
+  return useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: [DEVICE_VERIFICATION_QUERY_KEY] });
+  }, [queryClient]);
 };
 
 const toVerificationStatus = (verified: boolean | null | undefined): VerificationStatus => {

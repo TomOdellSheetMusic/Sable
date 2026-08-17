@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAtomValue } from 'jotai';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { isAndroidTauri } from '$utils/platform';
 import { activeSessionIdAtom } from '$state/sessions';
 import {
   fetchMediaBlob,
@@ -126,7 +125,8 @@ type LoopbackEntry = { promise: Promise<string>; url?: string };
 const loopbackCache = new Map<string, LoopbackEntry>();
 
 // Resolved up front because wry rejects a 3xx from a protocol handler, so the loopback cannot
-// be reached by redirect.
+// be reached by redirect. Used on every Tauri platform: it also keeps the immutable caching
+// the runtimes strip from custom-protocol responses.
 function resolveLoopbackUrl(protocolUrl: string): LoopbackEntry {
   const existing = loopbackCache.get(protocolUrl);
   if (existing) return existing;
@@ -181,15 +181,14 @@ export function useRenderableMediaUrl(url: string | undefined): string | undefin
   const [swMediaAuthSupported, setSwMediaAuthSupported] = useState(
     () => getCachedSWMediaAuthSupport() ?? false
   );
-  const androidTauri = tauri && isAndroidTauri();
   const protocolUrl = tauri ? (rewriteAuthenticatedMediaUrl(url ?? null) ?? undefined) : undefined;
   // A settled entry resolves synchronously, so a repeated avatar never flashes a fallback.
   const [loopbackUrl, setLoopbackUrl] = useState<string | undefined>(() =>
-    androidTauri && protocolUrl ? loopbackCache.get(protocolUrl)?.url : undefined
+    tauri && protocolUrl ? loopbackCache.get(protocolUrl)?.url : undefined
   );
 
   useEffect(() => {
-    if (!androidTauri || !protocolUrl) return undefined;
+    if (!tauri || !protocolUrl) return undefined;
     const entry = resolveLoopbackUrl(protocolUrl);
     if (entry.url) {
       setLoopbackUrl(entry.url);
@@ -202,7 +201,7 @@ export function useRenderableMediaUrl(url: string | undefined): string | undefin
     return () => {
       cancelled = true;
     };
-  }, [androidTauri, protocolUrl]);
+  }, [tauri, protocolUrl]);
   const needsBlob = !swMediaAuthSupported;
   const usesExistingObjectUrl = renderableUrl?.startsWith('blob:') ?? false;
   const [resolvedState, setResolvedState] = useState<ResolvedMediaUrlState>(() => {
@@ -269,7 +268,9 @@ export function useRenderableMediaUrl(url: string | undefined): string | undefin
   }, [needsBlob, objectUrlCacheKey, renderableUrl, tauri, usesExistingObjectUrl]);
 
   if (tauri) {
-    return androidTauri ? loopbackUrl : protocolUrl;
+    // No protocolUrl fallback while resolving: resolveLoopbackUrl already degrades to it,
+    // and handing out the custom-scheme URL first would fail a media element.
+    return loopbackUrl;
   }
 
   if (!needsBlob || usesExistingObjectUrl) {

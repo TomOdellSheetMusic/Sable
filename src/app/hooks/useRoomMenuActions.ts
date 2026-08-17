@@ -49,7 +49,7 @@ export function useRoomMenuActions(room: Room) {
   );
 
   const handleMarkAsRead = useCallback(() => {
-    markAsRead(mx, room.roomId, hideReads);
+    markAsRead(mx, room.roomId, hideReads, true);
   }, [mx, room.roomId, hideReads]);
 
   const handleInvite = useCallback(() => {

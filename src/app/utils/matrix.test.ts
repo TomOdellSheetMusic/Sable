@@ -21,7 +21,8 @@ vi.mock('@tauri-apps/api/core', () => tauriApi);
 vi.mock('./mediaTransport', () => mediaTransport);
 vi.mock('./room/relations', () => reactions);
 
-const { mxcUrlToHttp, rewriteAuthenticatedMediaUrl, toggleReaction } = await import('./matrix');
+const { getDMRoomFor, mxcUrlToHttp, rewriteAuthenticatedMediaUrl, toggleReaction } =
+  await import('./matrix');
 
 describe('rewriteAuthenticatedMediaUrl', () => {
   beforeEach(() => {
@@ -143,5 +144,104 @@ describe('mxcUrlToHttp', () => {
     expect(mxcUrlToHttp(mx, 'mxc://example.org/video', false)).toBe(
       `sable-media://${legacyUrl}?__sable_media_cache=3&__sable_media_session=%40user%3Aexample.com`
     );
+  });
+});
+
+type MockRoom = {
+  roomId: string;
+  memberships?: Record<string, string>;
+  encrypted?: boolean;
+  lastActive?: number;
+};
+
+const makeClient = (rooms: MockRoom[], mDirect?: Record<string, string[]>): MatrixClient => {
+  const roomMap = new Map(
+    rooms.map((mock) => [
+      mock.roomId,
+      {
+        roomId: mock.roomId,
+        getMyMembership: () => 'join',
+        getMember: (userId: string) => {
+          const membership = mock.memberships?.[userId];
+          return membership ? { userId, membership } : null;
+        },
+        getMembers: () =>
+          Object.entries(mock.memberships ?? {}).map(([userId, membership]) => ({
+            userId,
+            membership,
+          })),
+        hasEncryptionStateEvent: () => mock.encrypted ?? false,
+        getLastActiveTimestamp: () => mock.lastActive ?? 0,
+        getBumpStamp: () => undefined,
+      },
+    ])
+  );
+
+  return {
+    getRooms: () => Array.from(roomMap.values()),
+    getRoom: (roomId: string) => roomMap.get(roomId) ?? null,
+    getAccountData: () => (mDirect ? { getContent: () => mDirect } : undefined),
+  } as unknown as MatrixClient;
+};
+
+describe('getDMRoomFor', () => {
+  const otherUserId = '@other:example.org';
+
+  it('reuses a tagged room which is unencrypted and has a member who left', () => {
+    const mx = makeClient(
+      [
+        {
+          roomId: '!dm:example.org',
+          memberships: { [otherUserId]: 'join', '@left:example.org': 'leave' },
+        },
+      ],
+      { [otherUserId]: ['!dm:example.org'] }
+    );
+
+    expect(getDMRoomFor(mx, otherUserId)?.roomId).toBe('!dm:example.org');
+  });
+
+  it('prefers a tagged room the user is still part of', () => {
+    const mx = makeClient(
+      [
+        {
+          roomId: '!abandoned:example.org',
+          lastActive: 20,
+          memberships: { [otherUserId]: 'leave' },
+        },
+        { roomId: '!active:example.org', lastActive: 10, memberships: { [otherUserId]: 'join' } },
+      ],
+      { [otherUserId]: ['!abandoned:example.org', '!active:example.org'] }
+    );
+
+    expect(getDMRoomFor(mx, otherUserId)?.roomId).toBe('!active:example.org');
+  });
+
+  it('picks the most recently active tagged room', () => {
+    const mx = makeClient(
+      [
+        { roomId: '!old:example.org', lastActive: 10, memberships: { [otherUserId]: 'join' } },
+        { roomId: '!recent:example.org', lastActive: 30, memberships: { [otherUserId]: 'join' } },
+      ],
+      { [otherUserId]: ['!old:example.org', '!recent:example.org'] }
+    );
+
+    expect(getDMRoomFor(mx, otherUserId)?.roomId).toBe('!recent:example.org');
+  });
+
+  it('falls back to an encrypted one to one room when m.direct has no entry', () => {
+    const mx = makeClient([
+      { roomId: '!dm:example.org', encrypted: true, memberships: { [otherUserId]: 'join' } },
+    ]);
+
+    expect(getDMRoomFor(mx, otherUserId)?.roomId).toBe('!dm:example.org');
+  });
+
+  it('returns undefined when no room is shared with the user', () => {
+    const mx = makeClient([{ roomId: '!other:example.org', encrypted: true, memberships: {} }], {
+      '@someone:example.org': ['!other:example.org'],
+    });
+
+    expect(getDMRoomFor(mx, otherUserId)).toBeUndefined();
   });
 });

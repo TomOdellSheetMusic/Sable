@@ -201,14 +201,13 @@ export function NotificationBanner() {
       if (!container) return;
 
       const visualViewport = window.visualViewport!;
-      // Calculate how much of the screen is covered by the keyboard
-      // When keyboard opens, visualViewport.height shrinks
-      const keyboardHeight = window.innerHeight - visualViewport.height;
+      // The banner is fixed to the layout viewport, so iOS scrolls it off the top when the
+      // keyboard pushes the visual viewport down. offsetTop is that shift.
+      const shift = Math.round(visualViewport.offsetTop);
 
-      // Position the banner down by the keyboard height so it appears at the top of the visible area
-      // This puts it "halfway down the page" when keyboard covers half the screen
-      if (keyboardHeight > 0) {
-        container.style.top = `${keyboardHeight}px`;
+      if (shift > 0) {
+        // Keep the safe-area inset, otherwise the banner slides under the status bar.
+        container.style.top = `calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + ${shift}px)`;
       } else {
         // Reset to CSS default (env(safe-area-inset-top))
         container.style.top = '';

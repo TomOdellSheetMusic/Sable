@@ -1,15 +1,8 @@
 const IOS_PWA_VIEWPORT_HEIGHT = '--sable-ios-pwa-viewport-height';
-const MIN_KEYBOARD_HEIGHT = 100;
 
 const isStandaloneIosPwa = (): boolean =>
   window.matchMedia('(display-mode: standalone)').matches &&
   CSS.supports('-webkit-touch-callout: none');
-
-const isEditableFocused = (): boolean => {
-  const el = document.activeElement as HTMLElement | null;
-  if (!el) return false;
-  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable;
-};
 
 export function installIosPwaViewportHeight(): void {
   if (!isStandaloneIosPwa()) return;
@@ -20,14 +13,14 @@ export function installIosPwaViewportHeight(): void {
   const updateHeight = () => {
     frame = 0;
     const viewport = window.visualViewport;
-    const visibleHeight = viewport?.height ?? window.innerHeight;
-    const visibleBottom = visibleHeight + (viewport?.offsetTop ?? 0);
+    // Reach the bottom of the visible area. window.innerHeight is unusable here: iOS shrinks it
+    // on the first keyboard open and never restores it until the app is force-quit.
+    const visibleBottom = viewport ? viewport.height + viewport.offsetTop : window.innerHeight;
 
-    const layoutHeight = window.innerHeight;
-    const keyboardOpen = isEditableFocused() && layoutHeight - visibleHeight > MIN_KEYBOARD_HEIGHT;
-    const height = keyboardOpen ? visibleBottom : layoutHeight;
-
-    document.documentElement.style.setProperty(IOS_PWA_VIEWPORT_HEIGHT, `${Math.round(height)}px`);
+    document.documentElement.style.setProperty(
+      IOS_PWA_VIEWPORT_HEIGHT,
+      `${Math.round(visibleBottom)}px`
+    );
   };
 
   const scheduleUpdate = () => {

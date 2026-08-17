@@ -1,5 +1,5 @@
 import { Avatar, Box, Text } from 'folds';
-import { userFallbackIcon, MicrophoneSlash, SpeakerSlash } from '$components/icons/phosphor';
+import { userFallbackIcon, MicrophoneSlash } from '$components/icons/phosphor';
 import type { MouseEventHandler } from 'react';
 import { useAtomValue } from 'jotai';
 import type { Room, CallMembership } from '$types/matrix-sdk';
@@ -54,7 +54,7 @@ export function RoomNavUser({
     );
   };
 
-  const micMuted = mediaState?.micMuted && !mediaState.deafened;
+  const micMuted = mediaState?.micMuted;
   const ariaLabel = [isSpeaking && 'Speaking', micMuted && 'Microphone muted', name]
     .filter(Boolean)
     .join(', ');
@@ -78,24 +78,14 @@ export function RoomNavUser({
                   {name}
                 </Text>
               )}
-              {mediaState?.deafened ? (
+              {micMuted && (
                 <span
                   className={css.NavMuteIndicator}
-                  aria-label="Audio output muted"
-                  title="Audio output muted"
+                  aria-label="Microphone muted"
+                  title="Microphone muted"
                 >
-                  <SpeakerSlash size="1em" weight="fill" />
+                  <MicrophoneSlash size="1em" weight="fill" />
                 </span>
-              ) : (
-                micMuted && (
-                  <span
-                    className={css.NavMuteIndicator}
-                    aria-label="Microphone muted"
-                    title="Microphone muted"
-                  >
-                    <MicrophoneSlash size="1em" weight="fill" />
-                  </span>
-                )
               )}
             </Box>
           </Box>

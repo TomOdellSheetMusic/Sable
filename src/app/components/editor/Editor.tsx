@@ -79,14 +79,12 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
     ref
   ) => {
     const [shortcutOverrides] = useSetting(settingsAtom, 'shortcutOverrides');
-    const [alwaysInlineEditor] = useSetting(settingsAtom, 'alwaysInlineEditor');
     const rootRef = useRef<HTMLDivElement | null>(null);
     const focusScrollTimerRef = useRef<number>();
 
     // Buttons stay inline however tall the composer grows; only the audio
     // recorder stacks, because its controls need a row of their own.
-    const layoutIsMultiline = !alwaysInlineEditor && forceMultilineLayout;
-    const showResponsiveAfterInFooter = Boolean(responsiveAfter) && layoutIsMultiline;
+    const showResponsiveAfterInFooter = Boolean(responsiveAfter) && forceMultilineLayout;
 
     useEffect(() => () => window.clearTimeout(focusScrollTimerRef.current), []);
     const handleKeyDown: KeyboardEventHandler = useCallback(
@@ -135,13 +133,13 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
       <div ref={setRootRef} className={`${css.Editor} ${className ?? ''}`}>
         {top}
         <Box
-          className={`${css.EditorRow} ${layoutIsMultiline ? css.EditorRowMultiline : ''} ${showResponsiveAfterInFooter ? css.EditorRowMultilineWithResponsiveAfter : ''}`}
+          className={`${css.EditorRow} ${forceMultilineLayout ? css.EditorRowMultiline : ''} ${showResponsiveAfterInFooter ? css.EditorRowMultilineWithResponsiveAfter : ''}`}
           alignItems="Start"
           style={{ display: after ? 'grid' : 'flex' }}
         >
           {before && (
             <Box
-              className={`${css.EditorOptions} ${layoutIsMultiline ? css.EditorOptionsMultiline : ''}`}
+              className={`${css.EditorOptions} ${forceMultilineLayout ? css.EditorOptionsMultiline : ''}`}
               alignItems="Center"
               gap="100"
               shrink="No"
@@ -150,7 +148,7 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
             </Box>
           )}
           <Scroll
-            className={`${css.EditorTextareaScroll} ${layoutIsMultiline ? css.EditorTextareaScrollMultiline : ''}`}
+            className={`${css.EditorTextareaScroll} ${forceMultilineLayout ? css.EditorTextareaScrollMultiline : ''}`}
             variant={variant}
             style={{ maxHeight: showResponsiveAfterInFooter ? undefined : maxHeight }}
             size="300"
@@ -160,7 +158,7 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
             <ProseMirrorEditable
               controller={editor}
               editableName={editableName}
-              editorClassName={`${css.EditorTextarea} ${alwaysInlineEditor ? css.EditorTextareaInline : ''}`}
+              editorClassName={css.EditorTextarea}
               placeholder={placeholder}
               enterKeyHint={enterKeyHint}
               onDocumentChange={handleDocumentChange}
@@ -189,7 +187,7 @@ export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
           </Scroll>
           {(after || (responsiveAfter && !showResponsiveAfterInFooter)) && (
             <Box
-              className={`${css.EditorOptions} ${layoutIsMultiline ? `${css.EditorOptionsMultiline} ${css.EditorOptionsAfterMultiline}` : ''}`}
+              className={`${css.EditorOptions} ${forceMultilineLayout ? `${css.EditorOptionsMultiline} ${css.EditorOptionsAfterMultiline}` : ''}`}
               alignItems="Center"
               gap="100"
               shrink="No"

@@ -34,6 +34,7 @@ export type EditorAutocompleteQuery<TPrefix extends string> = {
  * retain an EditorState or EditorView.
  */
 export class ProseMirrorEditorController {
+  private attributes: Record<string, string> = {};
   private document: EditorDocument;
   private listeners = new Set<(document: EditorDocument) => void>();
   private renderContext: EditorRenderContext = defaultEditorRenderContext;
@@ -42,6 +43,20 @@ export class ProseMirrorEditorController {
   constructor(initialDocument: EditorDocument = emptyEditorDocument()) {
     this.document = structuredClone(initialDocument);
   }
+
+  setAttributes(attributes: Record<string, string>): void {
+    const unchanged =
+      Object.keys(attributes).length === Object.keys(this.attributes).length &&
+      Object.entries(attributes).every(([key, value]) => this.attributes[key] === value);
+    if (unchanged) return;
+    this.attributes = attributes;
+    this.view?.setProps({ attributes: this.viewAttributes });
+  }
+
+  private viewAttributes = (state: EditorState): Record<string, string> => ({
+    ...this.attributes,
+    'data-placeholder-visible': String(isProseMirrorDocumentEmpty(state.doc)),
+  });
 
   /** Rebuilding node views is a full redraw, so only react to a real change. */
   setRenderContext(context: EditorRenderContext): void {
@@ -110,6 +125,7 @@ export class ProseMirrorEditorController {
 
   mount(element: HTMLElement, attributes?: Record<string, string>): () => void {
     this.view?.destroy();
+    this.attributes = attributes ?? {};
     const state = EditorState.create({
       doc: toProseMirrorDocument(this.document),
       plugins: [
@@ -125,10 +141,7 @@ export class ProseMirrorEditorController {
     this.view = new EditorView(
       { mount: element },
       {
-        attributes: (viewState) => ({
-          ...attributes,
-          'data-placeholder-visible': String(isProseMirrorDocumentEmpty(viewState.doc)),
-        }),
+        attributes: this.viewAttributes,
         handlePaste: (view, event) => {
           const text = event.clipboardData?.getData('text/plain');
           if (text === undefined || text === '') return false;

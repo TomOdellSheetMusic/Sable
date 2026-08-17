@@ -65,7 +65,7 @@ export const EditorTextarea = style([
   {
     flexGrow: 1,
     height: 'auto',
-    padding: `${toRem(13)} 0 0`,
+    padding: `${toRem(13)} 0`,
     position: 'relative',
     whiteSpace: 'pre-wrap',
     wordWrap: 'break-word',
@@ -103,10 +103,6 @@ export const EditorTextarea = style([
     },
   },
 ]);
-
-export const EditorTextareaInline = style({
-  paddingBottom: toRem(13),
-});
 
 export const EditorResponsiveAfterMultiline = style([
   EditorOptions,

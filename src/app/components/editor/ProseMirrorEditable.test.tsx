@@ -68,4 +68,27 @@ describe('ProseMirrorEditable', () => {
     expect(editable).toHaveAttribute('enterkeyhint', 'send');
     expect(container.firstElementChild).toBe(editable);
   });
+
+  it('updates editable semantics without rebuilding the document', () => {
+    const controller = new ProseMirrorEditorController();
+    const ref = createRef<ProseMirrorEditableHandle>();
+    const { container, rerender } = render(
+      <ProseMirrorEditable controller={controller} placeholder="Send a message" ref={ref} />
+    );
+
+    act(() => {
+      ref.current?.setDocument([{ type: BlockType.Paragraph, children: [{ text: 'draft' }] }]);
+    });
+    const paragraph = container.querySelector('.ProseMirror > p');
+
+    rerender(
+      <ProseMirrorEditable controller={controller} placeholder="Reply to Alice" ref={ref} />
+    );
+
+    expect(container.querySelector('.ProseMirror > p')).toBe(paragraph);
+    expect(container.querySelector('.ProseMirror')).toHaveAttribute(
+      'data-placeholder',
+      'Reply to Alice'
+    );
+  });
 });

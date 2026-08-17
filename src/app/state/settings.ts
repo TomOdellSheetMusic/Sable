@@ -132,7 +132,6 @@ export interface Settings {
   editorStickerButton: boolean;
   editorButtonOrder: EditorButtonId[];
   composerToolbarOpen: boolean;
-  alwaysInlineEditor: boolean;
   messageLayout: MessageLayout;
   messageSpacing: MessageSpacing;
   hideMembershipEvents: boolean;
@@ -319,7 +318,6 @@ export const defaultSettings: Settings = {
   editorStickerButton: false,
   editorButtonOrder: [...EDITOR_BUTTON_ORDER_DEFAULT],
   composerToolbarOpen: false,
-  alwaysInlineEditor: false,
   messageLayout: 0,
   messageSpacing: '400',
   hideMembershipEvents: false,

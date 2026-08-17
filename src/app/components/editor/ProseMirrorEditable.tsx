@@ -1,5 +1,5 @@
 import type { HTMLAttributes, KeyboardEventHandler } from 'react';
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import type { EditorDocument } from './model';
 import type { ProseMirrorEditorController } from './prosemirrorController';
 
@@ -63,18 +63,29 @@ export const ProseMirrorEditable = forwardRef<ProseMirrorEditableHandle, ProseMi
       [controller]
     );
 
-    useEffect(() => {
-      const root = rootRef.current;
-      if (!root) return undefined;
-      // ProseMirror owns these; React must not also render them.
-      return controller.mount(root, {
+    // ProseMirror owns these; React must not also render them.
+    const attributes = useMemo(
+      () => ({
         ...(editorClassName ? { class: editorClassName } : {}),
         ...(placeholder ? { 'data-placeholder': placeholder, 'aria-label': placeholder } : {}),
         ...(editableName ? { 'data-editable-name': editableName } : {}),
         ...(enterKeyHint ? { enterkeyhint: enterKeyHint } : {}),
         role: 'textbox',
-      });
-    }, [controller, editableName, editorClassName, enterKeyHint, placeholder]);
+      }),
+      [editableName, editorClassName, enterKeyHint, placeholder]
+    );
+    const attributesRef = useRef(attributes);
+    attributesRef.current = attributes;
+
+    useEffect(() => {
+      const root = rootRef.current;
+      if (!root) return undefined;
+      return controller.mount(root, attributesRef.current);
+    }, [controller]);
+
+    useEffect(() => {
+      controller.setAttributes(attributes);
+    }, [attributes, controller]);
 
     useEffect(
       () => controller.subscribe((document) => onDocumentChange?.(document)),

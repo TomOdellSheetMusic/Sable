@@ -1,5 +1,5 @@
 import { Avatar, Box, Text } from 'folds';
-import { userFallbackIcon } from '$components/icons/phosphor';
+import { userFallbackIcon, MicrophoneSlash, SpeakerSlash } from '$components/icons/phosphor';
 import type { MouseEventHandler } from 'react';
 import { useAtomValue } from 'jotai';
 import type { Room, CallMembership } from '$types/matrix-sdk';
@@ -13,6 +13,7 @@ import { useOpenUserRoomProfile } from '$state/hooks/userRoomProfile';
 import { useSpaceOptionally } from '$hooks/useSpace';
 import { nicknamesAtom } from '$state/nicknames';
 import classNames from 'classnames';
+import type { CallMemberMediaState } from '$hooks/useCallMemberMediaState';
 import * as css from './styles.css';
 
 type RoomNavUserProps = {
@@ -20,9 +21,16 @@ type RoomNavUserProps = {
   callMembership: CallMembership;
   hideText?: boolean;
   activeSpeakers?: Set<string>;
+  memberMediaStates?: ReadonlyMap<string, CallMemberMediaState>;
 };
 
-export function RoomNavUser({ room, callMembership, hideText, activeSpeakers }: RoomNavUserProps) {
+export function RoomNavUser({
+  room,
+  callMembership,
+  hideText,
+  activeSpeakers,
+  memberMediaStates,
+}: RoomNavUserProps) {
   const mx = useMatrixClient();
   const useAuthentication = useMediaAuthentication();
   const openProfile = useOpenUserRoomProfile();
@@ -34,6 +42,7 @@ export function RoomNavUser({ room, callMembership, hideText, activeSpeakers }: 
   const nicknames = useAtomValue(nicknamesAtom);
   const name = getMemberDisplayName(room, userId, nicknames) ?? getMxIdLocalPart(userId);
   const isSpeaking = !!activeSpeakers?.has(userId);
+  const mediaState = memberMediaStates?.get(userId);
 
   const handleNavUserClick: MouseEventHandler<HTMLButtonElement> = (evt) => {
     openProfile(
@@ -45,7 +54,10 @@ export function RoomNavUser({ room, callMembership, hideText, activeSpeakers }: 
     );
   };
 
-  const ariaLabel = isSpeaking ? `Speaking: ${name}` : name;
+  const micMuted = mediaState?.micMuted && !mediaState.deafened;
+  const ariaLabel = [isSpeaking && 'Speaking', micMuted && 'Microphone muted', name]
+    .filter(Boolean)
+    .join(', ');
 
   return (
     <NavItem variant="Background" radii="400">
@@ -65,6 +77,25 @@ export function RoomNavUser({ room, callMembership, hideText, activeSpeakers }: 
                 <Text as="span" size="B400" priority="300" truncate>
                   {name}
                 </Text>
+              )}
+              {mediaState?.deafened ? (
+                <span
+                  className={css.NavMuteIndicator}
+                  aria-label="Audio output muted"
+                  title="Audio output muted"
+                >
+                  <SpeakerSlash size="1em" weight="fill" />
+                </span>
+              ) : (
+                micMuted && (
+                  <span
+                    className={css.NavMuteIndicator}
+                    aria-label="Microphone muted"
+                    title="Microphone muted"
+                  >
+                    <MicrophoneSlash size="1em" weight="fill" />
+                  </span>
+                )
               )}
             </Box>
           </Box>

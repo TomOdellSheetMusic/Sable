@@ -24,3 +24,13 @@ export const SpeakerAvatarRing = style({
   boxShadow: `0 0 0 ${config.borderWidth.B600} ${color.Success.Main}`,
   borderRadius: config.radii.Pill,
 });
+
+export const NavMuteIndicator = style({
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  lineHeight: 0,
+  flexShrink: 0,
+  color: color.Critical.Main,
+  opacity: config.opacity.P500,
+});

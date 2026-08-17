@@ -55,6 +55,7 @@ import {
   SidebarAvatar,
   SidebarItemLeft,
   SidebarUnreadBadge,
+  SidebarCallBadge,
   SidebarItemTooltip,
   SidebarStack,
   SidebarStackSeparator,
@@ -90,6 +91,7 @@ import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
 import { useRoomAvatar } from '$hooks/useRoomMeta';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
+import { useSpaceActiveCall } from '$hooks/useSpaceActiveCall';
 import { useRoomCreators } from '$hooks/useRoomCreators';
 import { useRoomPermissions } from '$hooks/useRoomPermissions';
 import { InviteUserPrompt } from '$components/invite-user-prompt';
@@ -541,6 +543,7 @@ function SpaceTab({
   const isMobile = useScreenSizeContext() === ScreenSize.Mobile;
   const targetRef = useRef<HTMLDivElement>(null);
   const menu = useMenuAnchor<HTMLButtonElement>();
+  const inCall = useSpaceActiveCall(space.roomId);
   const mobileTapActivation = useMobileTapActivation(
     isMobile,
     () => onSelect(space.roomId),
@@ -606,6 +609,7 @@ function SpaceTab({
               count={unread.highlight > 0 ? unread.highlight : unread.total}
             />
           )}
+          {inCall && <SidebarCallBadge />}
           <ResponsiveMenu
             anchor={menu.anchor}
             position="Right"
@@ -694,6 +698,7 @@ function ClosedSpaceFolder({
   const dropType = dropState?.type;
 
   const tooltipName = folderDefaultDisplayName(mx, folder);
+  const folderInCall = useSpaceActiveCall(folder.content);
 
   return (
     <RoomsUnreadProvider rooms={folder.content}>
@@ -741,6 +746,7 @@ function ClosedSpaceFolder({
               count={unread.highlight > 0 ? unread.highlight : unread.total}
             />
           )}
+          {folderInCall && <SidebarCallBadge />}
         </SidebarItemLeft>
       )}
     </RoomsUnreadProvider>

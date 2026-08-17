@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { User, UserEventHandlerMap } from '$types/matrix-sdk';
+import type { User } from '$types/matrix-sdk';
 import { UserEvent } from '$types/matrix-sdk';
 import { useMatrixClient } from './useMatrixClient';
 
@@ -25,30 +25,33 @@ const getUserPresence = (user: User): UserPresence => ({
 
 export const useUserPresence = (userId: string): UserPresence | undefined => {
   const mx = useMatrixClient();
-  const user = mx.getUser(userId);
-  const [presence, setPresence] = useState(() => (user ? getUserPresence(user) : undefined));
+  const [presence, setPresence] = useState<UserPresence | undefined>(() => {
+    const user = mx.getUser(userId);
+    return user ? getUserPresence(user) : undefined;
+  });
 
   useEffect(() => {
-    if (!user) {
-      setPresence(undefined);
-      return undefined;
-    }
-    setPresence(getUserPresence(user));
-    const updatePresence: UserEventHandlerMap[UserEvent.Presence] = (e, u) => {
-      if (u.userId === user.userId) {
-        setPresence(getUserPresence(user));
-      }
+    // Listen on the client rather than the User object directly. Presence for
+    // bridged users (e.g. Discord) is delivered lazily by PresenceSyncManager,
+    // which creates the User on the fly. The client re-emits user events for
+    // every user (including ones created after mount), so this hook updates
+    // even when the User object did not exist when the component mounted.
+    const refresh = () => {
+      const user = mx.getUser(userId);
+      setPresence(user ? getUserPresence(user) : undefined);
     };
-    user.on(UserEvent.Presence, updatePresence);
-    user.on(UserEvent.CurrentlyActive, updatePresence);
-    user.on(UserEvent.LastPresenceTs, updatePresence);
+    refresh();
+
+    mx.on(UserEvent.Presence, refresh);
+    mx.on(UserEvent.CurrentlyActive, refresh);
+    mx.on(UserEvent.LastPresenceTs, refresh);
 
     return () => {
-      user.removeListener(UserEvent.Presence, updatePresence);
-      user.removeListener(UserEvent.CurrentlyActive, updatePresence);
-      user.removeListener(UserEvent.LastPresenceTs, updatePresence);
+      mx.removeListener(UserEvent.Presence, refresh);
+      mx.removeListener(UserEvent.CurrentlyActive, refresh);
+      mx.removeListener(UserEvent.LastPresenceTs, refresh);
     };
-  }, [user]);
+  }, [mx, userId]);
 
   return presence;
 };

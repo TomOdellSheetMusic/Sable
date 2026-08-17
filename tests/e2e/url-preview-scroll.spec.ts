@@ -70,14 +70,21 @@ type Drift = {
   step: number;
   top: number;
   anchor: string;
+  reference: string;
   expected: number;
   actual: number;
   drift: number;
 };
 
+type Row = { id: string; top: number };
+
 /**
- * Scrolls up a notch at a time, checking each notch moves the row anchored just below the
- * viewport top by exactly that notch. Returns the largest deviation seen.
+ * Scrolls up a notch at a time, measuring the distance between the row anchored just below
+ * the viewport top and the topmost rendered row. Returns the worst deviation.
+ *
+ * Distance, not absolute position: virtua sizes rows it has never rendered from an average
+ * of the measured ones, so discovering a ~350px preview row above the viewport slides the
+ * whole timeline whatever the cards do.
  */
 async function worstScrollDrift(page: Page): Promise<Drift> {
   const scroller = page.locator('#timeline-scroller');
@@ -90,42 +97,41 @@ async function worstScrollDrift(page: Page): Promise<Drift> {
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 
   const readTop = () => scroller.evaluate((el) => el.scrollTop);
-  const pickAnchor = async (): Promise<{ body: string; y: number } | undefined> =>
-    scroller.evaluate((el, top: number) => {
-      const rows = Array.from(el.querySelectorAll('[data-message-id]'));
-      const row = rows.find((r) => r.getBoundingClientRect().top > top + 20);
-      if (!row) return undefined;
-      return { body: row.textContent?.slice(0, 40) ?? '', y: row.getBoundingClientRect().top };
-    }, box.y);
-  const measureAnchor = async (body: string): Promise<number | undefined> =>
-    scroller.evaluate((el, id: string) => {
-      const row = Array.from(el.querySelectorAll('[data-message-id]')).find((r) =>
-        (r.textContent ?? '').startsWith(id)
-      );
-      return row ? row.getBoundingClientRect().top : undefined;
-    }, body);
+  const shoot = (): Promise<Row[]> =>
+    scroller.evaluate((el) =>
+      Array.from(el.querySelectorAll('[data-message-id]')).map((r) => ({
+        id: (r.textContent ?? '').slice(0, 40),
+        top: r.getBoundingClientRect().top,
+      }))
+    );
 
   const drifts: Drift[] = [];
   for (let step = 0; step < 60; step += 1) {
-    const anchor = await pickAnchor();
+    const before = await shoot();
+    const anchor = before.find((r) => r.top > box.y + 20);
+    const reference = before[0];
     const top = await readTop();
-    if (!anchor) break;
+    if (!anchor || !reference || reference.id === anchor.id) break;
     await page.mouse.wheel(0, -WHEEL);
     await page.waitForTimeout(250);
-    const actualY = await measureAnchor(anchor.body);
+    const after = await shoot();
     const topAfter = await readTop();
-    if (actualY === undefined) continue; // scrolled out of the rendered window
     // At the very top the scroller clamps, so the wheel cannot deliver its full delta
     // and the shortfall is arithmetic, not a jump.
     if (topAfter === 0) break;
-    const expected = anchor.y + WHEEL;
+    const anchorAfter = after.find((r) => r.id === anchor.id);
+    const referenceAfter = after.find((r) => r.id === reference.id);
+    if (!anchorAfter || !referenceAfter) continue; // recycled out of the rendered window
+    const expected = anchor.top - reference.top;
+    const actual = anchorAfter.top - referenceAfter.top;
     drifts.push({
       step,
       top,
-      anchor: anchor.body.slice(-24),
+      anchor: anchor.id.slice(-24),
+      reference: reference.id.slice(-24),
       expected,
-      actual: actualY,
-      drift: actualY - expected,
+      actual,
+      drift: actual - expected,
     });
   }
 
@@ -137,6 +143,7 @@ async function worstScrollDrift(page: Page): Promise<Drift> {
       step: -1,
       top: 0,
       anchor: '',
+      reference: '',
       expected: 0,
       actual: 0,
       drift: 0,

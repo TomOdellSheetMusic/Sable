@@ -2,7 +2,7 @@ import { EventEmitter } from 'events';
 import { forwardRef, useImperativeHandle, type ReactNode } from 'react';
 import { act, render, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import type { Editor } from 'slate';
+import type { ProseMirrorEditorController as Editor } from '$components/editor/prosemirrorController';
 import type { Room } from '$types/matrix-sdk';
 import { RoomEvent } from '$types/matrix-sdk';
 import type { ProcessedEvent } from '$hooks/timeline/useProcessedTimeline';

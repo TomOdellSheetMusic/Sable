@@ -1,6 +1,5 @@
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { useCallback, useEffect } from 'react';
-import type { Editor } from 'slate';
 import { Avatar, MenuItem, Text } from 'folds';
 import { userFallbackIcon } from '$components/icons/phosphor';
 import type { MatrixClient, Room, RoomMember } from '$types/matrix-sdk';
@@ -18,15 +17,13 @@ import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
 
 import { useAtomValue } from 'jotai';
 import { nicknamesAtom } from '$state/nicknames';
-import {
-  createMentionElement,
-  mentionNameForUserAutocomplete,
-  moveCursor,
-  replaceWithElement,
-} from '$components/editor/utils';
+import { createMentionElement, mentionNameForUserAutocomplete } from '$components/editor/utils';
 import { getMxIdServer } from '$utils/mxIdHelper';
 import { AutocompleteMenu } from './AutocompleteMenu';
-import type { AutocompleteQuery } from './autocompleteQuery';
+import type {
+  EditorAutocompleteQuery,
+  ProseMirrorEditorController,
+} from '../prosemirrorController';
 import { KnownMembership } from '$types/matrix-sdk';
 
 type MentionAutoCompleteHandler = (userId: string, name: string) => void;
@@ -69,8 +66,8 @@ function UnknownMentionItem({
 
 type UserMentionAutocompleteProps = {
   room: Room;
-  editor: Editor;
-  query: AutocompleteQuery<string>;
+  controller: ProseMirrorEditorController;
+  query: EditorAutocompleteQuery<string>;
   requestClose: () => void;
 };
 
@@ -90,7 +87,7 @@ const mxIdToName = (mxId: string) => getMxIdLocalPart(mxId) ?? mxId;
 
 export function UserMentionAutocomplete({
   room,
-  editor,
+  controller,
   query,
   requestClose,
 }: UserMentionAutocompleteProps) {
@@ -124,8 +121,8 @@ export function UserMentionAutocomplete({
       mentionNameForUserAutocomplete(id, displayName, { room, nicknames }),
       isRoomPing ? isCurrentRoom : mx.getUserId() === id || isCurrentRoom
     );
-    replaceWithElement(editor, query.range, mentionEl);
-    moveCursor(editor, true);
+    controller.insertInline(mentionEl, query.from, query.to);
+    controller.insertText(' ');
     requestClose();
   };
 
@@ -154,11 +151,7 @@ export function UserMentionAutocomplete({
   });
 
   return (
-    <AutocompleteMenu
-      headerContent={<Text size="L400">Mentions</Text>}
-      requestClose={requestClose}
-      editor={editor}
-    >
+    <AutocompleteMenu headerContent={<Text size="L400">Mentions</Text>} requestClose={requestClose}>
       {query.text === 'room' && (
         <UnknownMentionItem
           userId={roomAliasOrId}

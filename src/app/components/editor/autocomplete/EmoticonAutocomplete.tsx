@@ -1,6 +1,5 @@
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { useEffect, useMemo } from 'react';
-import type { Editor } from 'slate';
 import { Box, MenuItem, Text, toRem } from 'folds';
 import type { Room } from '$types/matrix-sdk';
 
@@ -20,9 +19,12 @@ import { ImageUsage } from '$plugins/custom-emoji';
 import { getEmoticonSearchStr } from '$plugins/utils';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
-import { createEmoticonElement, moveCursor, replaceWithElement } from '$components/editor/utils';
+import { createEmoticonElement } from '$components/editor/utils';
+import type {
+  EditorAutocompleteQuery,
+  ProseMirrorEditorController,
+} from '$components/editor/prosemirrorController';
 import { AutocompleteMenu } from './AutocompleteMenu';
-import type { AutocompleteQuery } from './autocompleteQuery';
 
 type EmoticonCompleteHandler = (key: string, shortcode: string) => void;
 
@@ -31,8 +33,8 @@ type EmoticonSearchItem = PackImageReader | IEmoji;
 type EmoticonAutocompleteProps = {
   title?: string;
   imagePackRooms: Room[];
-  editor: Editor;
-  query: AutocompleteQuery<string>;
+  controller: ProseMirrorEditorController;
+  query: EditorAutocompleteQuery<string>;
   requestClose: () => void;
   // this allows you to override the default behaviour of inserting the selection
   // used to implement the +: reaction shortcut
@@ -48,7 +50,7 @@ const SEARCH_OPTIONS: UseAsyncSearchOptions = {
 export function EmoticonAutocomplete({
   title,
   imagePackRooms,
-  editor,
+  controller,
   query,
   requestClose,
   onEmoticonSelected,
@@ -89,9 +91,8 @@ export function EmoticonAutocomplete({
   const handleAutocomplete: EmoticonCompleteHandler =
     onEmoticonSelected ??
     ((key, shortcode) => {
-      const emoticonEl = createEmoticonElement(key, shortcode);
-      replaceWithElement(editor, query.range, emoticonEl);
-      moveCursor(editor, true);
+      controller.insertInline(createEmoticonElement(key, shortcode), query.from, query.to);
+      controller.insertText(' ');
       requestClose();
     });
 
@@ -108,7 +109,6 @@ export function EmoticonAutocomplete({
     <AutocompleteMenu
       headerContent={<Text size="L400">{title ?? 'Emojis'}</Text>}
       requestClose={requestClose}
-      editor={editor}
     >
       {autoCompleteEmoticon.map((emoticon) => {
         const isCustomEmoji = 'url' in emoticon;

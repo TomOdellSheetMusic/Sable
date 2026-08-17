@@ -1,599 +1,215 @@
 import type {
   ClipboardEventHandler,
-  FocusEvent,
   KeyboardEventHandler,
   MutableRefObject,
   ReactNode,
 } from 'react';
-import { forwardRef, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Box, Scroll, Text } from 'folds';
-import type { Descendant, Editor } from 'slate';
-import { Node, Transforms, createEditor } from 'slate';
-import type { RenderLeafProps, RenderElementProps, RenderPlaceholderProps } from 'slate-react';
-import { Slate, Editable, withReact, ReactEditor } from 'slate-react';
-import { withHistory } from 'slate-history';
+import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
+import { Box, Scroll } from 'folds';
 import { iosApp, isMobileOrTablet } from '$utils/platform';
 import { readClipboardText } from '$utils/dom';
 import { createLogger } from '$utils/debug';
-import { BlockType } from './types';
-import { RenderElement, RenderLeaf } from './Elements';
-import type { CustomElement } from './slate';
-import * as css from './Editor.css';
-import { toggleKeyboardShortcut } from './keyboard';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
+import type { EditorDocument } from './model';
+import { ProseMirrorEditable } from './ProseMirrorEditable';
+import { ProseMirrorEditorController } from './prosemirrorController';
+import { toggleProseMirrorKeyboardShortcut } from './keyboard';
+import { useEditorRenderContext } from './useEditorRenderContext';
+import * as css from './Editor.css';
 
-const withInline = (editor: Editor): Editor => {
-  const { isInline } = editor;
-
-  editor.isInline = (element) =>
-    [BlockType.Mention, BlockType.Emoticon, BlockType.Link, BlockType.Command].includes(
-      element.type
-    ) || isInline(element);
-
-  return editor;
-};
-
-const withVoid = (editor: Editor): Editor => {
-  const { isVoid } = editor;
-
-  editor.isVoid = (element) =>
-    [BlockType.Mention, BlockType.Emoticon, BlockType.Command].includes(element.type) ||
-    isVoid(element);
-
-  return editor;
-};
-
-const SLATE_FRAGMENT_TYPE = 'application/x-slate-fragment';
-const slateFragmentAttribute = /data-slate-fragment="(.+?)"/m;
-
-const insertSlateFragment = (editor: Editor, fragment: string): boolean => {
-  if (!fragment) return false;
-
-  const decoded = decodeURIComponent(window.atob(fragment));
-  editor.insertFragment(JSON.parse(decoded));
-  return true;
-};
-
-const withEfficientClipboardReads = (editor: Editor): Editor => {
-  const { insertData } = editor;
-
-  editor.insertData = (data) => {
-    const types = new Set(Array.from(data.types ?? [], (type) => type.toLowerCase()));
-    if (types.size === 0) {
-      insertData(data);
-      return;
-    }
-
-    if (
-      types.has(SLATE_FRAGMENT_TYPE) &&
-      insertSlateFragment(editor, data.getData(SLATE_FRAGMENT_TYPE))
-    ) {
-      return;
-    }
-
-    if (types.has('text/html')) {
-      const [, fragment] = data.getData('text/html').match(slateFragmentAttribute) || [];
-      if (fragment && insertSlateFragment(editor, fragment)) return;
-    }
-
-    if (types.has('text/plain')) editor.insertTextData(data);
-  };
-
-  return editor;
-};
-
-export const useEditor = (): Editor => {
-  const [editor] = useState(() =>
-    withInline(withVoid(withEfficientClipboardReads(withReact(withHistory(createEditor())))))
-  );
+export const useEditor = (): ProseMirrorEditorController => {
+  const [editor] = useState(() => new ProseMirrorEditorController());
+  const renderContext = useEditorRenderContext();
+  useEffect(() => {
+    editor.setRenderContext(renderContext);
+  }, [editor, renderContext]);
   return editor;
 };
 
 const log = createLogger('Editor');
 
-const hasPasteData = (data: DataTransfer): boolean =>
-  data.files.length > 0 || data.getData('text/plain') !== '' || data.getData('text/html') !== '';
-
-const insertPastedText = (editor: Editor, text: string): void => {
-  text.split(/\r\n|\r|\n/).forEach((line, index) => {
-    if (index > 0) Transforms.splitNodes(editor, { always: true });
-    Transforms.insertText(editor, line);
-  });
-};
-
-const MemoizedEditable = memo(Editable);
-const EDITABLE_STYLE = { boxShadow: 'none' };
-
-type EditorChangeHandler = (value: Descendant[]) => void;
-const MAX_MULTILINE_MEASURE_RETRIES = 2;
-const MULTILINE_HEIGHT_EPSILON = 1;
-const TRAILING_SPACE_SENTINEL = '\u200B';
-
-const normalizeMeasurementText = (text: string): string =>
-  /[ \t]+$/.test(text) ? `${text}${TRAILING_SPACE_SENTINEL}` : text;
-
-type MultilineMeasurementCache = {
-  result: boolean;
-  singleLineWidth: number;
-  styleKey: string;
-  text: string;
-};
-
 type CustomEditorProps = {
-  editableName?: string;
-  top?: ReactNode;
-  bottom?: ReactNode;
-  before?: ReactNode;
   after?: ReactNode;
-  responsiveAfter?: ReactNode;
+  before?: ReactNode;
+  bottom?: ReactNode;
+  className?: string;
+  editableName?: string;
+  editor: ProseMirrorEditorController;
+  enterKeyHint?: 'enter' | 'send';
   forceMultilineLayout?: boolean;
   maxHeight?: string;
-  editor: Editor;
-  placeholder?: string;
+  onChange?: (value: EditorDocument) => void;
   onKeyDown?: KeyboardEventHandler;
   onKeyUp?: KeyboardEventHandler;
-  onChange?: EditorChangeHandler;
   onPaste?: ClipboardEventHandler;
-  className?: string;
-  variant?: 'Surface' | 'SurfaceVariant' | 'Background';
-  enterKeyHint?: 'enter' | 'send';
+  placeholder?: string;
+  responsiveAfter?: ReactNode;
   suppressBlurRefocusRef?: MutableRefObject<boolean>;
+  top?: ReactNode;
+  variant?: 'Surface' | 'SurfaceVariant' | 'Background';
 };
+
+/**
+ * Visual shell for the Sable editor. Its interface is engine-neutral: callers
+ * interact with a controller and Sable documents, never an editor engine state.
+ */
 export const CustomEditor = forwardRef<HTMLDivElement, CustomEditorProps>(
   (
     {
-      editableName,
-      top,
-      bottom,
-      before,
       after,
-      responsiveAfter,
+      before,
+      bottom,
+      className,
+      editableName,
+      editor,
+      enterKeyHint,
       forceMultilineLayout = false,
       maxHeight = '50dvh',
-      editor,
-      placeholder,
+      onChange,
       onKeyDown,
       onKeyUp,
-      onChange,
       onPaste,
-      className,
-      variant = 'SurfaceVariant',
-      enterKeyHint,
+      placeholder,
+      responsiveAfter,
       suppressBlurRefocusRef,
+      variant = 'SurfaceVariant',
+      top,
     },
     ref
   ) => {
     const [shortcutOverrides] = useSetting(settingsAtom, 'shortcutOverrides');
-    // Each <Slate> instance must receive its own fresh node objects.
-    // Sharing a module-level constant causes Slate's global NODE_TO_ELEMENT
-    // WeakMap to be overwritten when multiple editors are mounted at the same
-    // time (e.g. RoomInput + MessageEditor in the thread drawer), leading to
-    // "Unable to find the path for Slate node" crashes.
-    const [slateInitialValue] = useState<CustomElement[]>(() => [
-      { type: BlockType.Paragraph, children: [{ text: '' }] },
-    ]);
-    const rootRef = useRef<HTMLDivElement | null>(null);
-    const editableRef = useRef<HTMLDivElement>(null);
-    const focusScrollTimerRef = useRef<number>();
-    const rowRef = useRef<HTMLDivElement>(null);
-    const beforeRef = useRef<HTMLDivElement>(null);
-    const afterRef = useRef<HTMLDivElement>(null);
-    const textMeasurerRef = useRef<HTMLDivElement | null>(null);
-    const measurementCacheRef = useRef<MultilineMeasurementCache | null>(null);
-    const multilineMeasureFrameRef = useRef<number | null>(null);
-    const multilineMeasureRetryRef = useRef(0);
-    const singleLineWidthOffsetRef = useRef(0);
-    const latestValueRef = useRef<Descendant[]>(editor.children);
-    const isMultilineRef = useRef(false);
-    const [isMultiline, setIsMultiline] = useState(false);
-    const [measurementVersion, setMeasurementVersion] = useState(0);
-    const hasBefore = Boolean(before);
-    const hasAfter = Boolean(after);
-    const hasResponsiveAfter = Boolean(responsiveAfter);
     const [alwaysInlineEditor] = useSetting(settingsAtom, 'alwaysInlineEditor');
-    const layoutIsMultiline = !alwaysInlineEditor && (isMultiline || forceMultilineLayout);
-    const showResponsiveAfterInFooter = hasResponsiveAfter && layoutIsMultiline;
-    const showResponsiveAfterInline = hasResponsiveAfter && !showResponsiveAfterInFooter;
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const focusScrollTimerRef = useRef<number>();
+
+    // Buttons stay inline however tall the composer grows; only the audio
+    // recorder stacks, because its controls need a row of their own.
+    const layoutIsMultiline = !alwaysInlineEditor && forceMultilineLayout;
+    const showResponsiveAfterInFooter = Boolean(responsiveAfter) && layoutIsMultiline;
+
+    useEffect(() => () => window.clearTimeout(focusScrollTimerRef.current), []);
+    const handleKeyDown: KeyboardEventHandler = useCallback(
+      (event) => {
+        onKeyDown?.(event);
+        if (
+          !event.defaultPrevented &&
+          toggleProseMirrorKeyboardShortcut(editor, event, shortcutOverrides)
+        ) {
+          event.preventDefault();
+        }
+      },
+      [editor, onKeyDown, shortcutOverrides]
+    );
+    const handlePaste: ClipboardEventHandler = useCallback(
+      (event) => {
+        onPaste?.(event);
+        if (event.defaultPrevented || !iosApp() || event.clipboardData.getData('text/plain'))
+          return;
+        event.preventDefault();
+        readClipboardText()
+          .then((text) => text && editor.insertText(text))
+          .catch((error: unknown) =>
+            log.warn('Failed to read the native clipboard on paste:', error)
+          );
+      },
+      [editor, onPaste]
+    );
 
     const setRootRef = useCallback(
-      (node: HTMLDivElement | null) => {
-        rootRef.current = node;
-        if (typeof ref === 'function') {
-          ref(node);
-        } else if (ref) {
-          Reflect.set(ref, 'current', node);
-        }
+      (element: HTMLDivElement | null) => {
+        rootRef.current = element;
+        if (typeof ref === 'function') ref(element);
+        else if (ref) ref.current = element;
       },
       [ref]
     );
-
-    const updateMultilineLayout = useCallback(
-      (value: Descendant[] = editor.children) => {
-        const hasMultipleBlocks = value.length > 1;
-        const text = value.map((node) => Node.string(node)).join('');
-        const hasExplicitNewlines = text.includes('\n');
-
-        const editable = editableRef.current;
-        const row = rowRef.current;
-        const textMeasurer = textMeasurerRef.current;
-        if (editable && row && textMeasurer) {
-          const scroll = editable.parentElement as HTMLDivElement | null;
-          const computedStyle = getComputedStyle(editable);
-          const beforeWidth = beforeRef.current?.offsetWidth ?? 0;
-          const afterWidth = afterRef.current?.offsetWidth ?? 0;
-          const rowSingleLineWidth = row.offsetWidth - beforeWidth - afterWidth;
-          const isRenderedSingleLine = !layoutIsMultiline;
-
-          if (isRenderedSingleLine && scroll) {
-            // Scroll.clientWidth is the width the editable actually gets after padding and
-            // scrollbar math. Cache that delta while we are rendered single-line so later
-            // hidden measurements can compare against the same usable width.
-            const renderedSingleLineWidth = scroll.clientWidth;
-            if (renderedSingleLineWidth > 0) {
-              singleLineWidthOffsetRef.current = Math.max(
-                0,
-                rowSingleLineWidth - renderedSingleLineWidth
-              );
-            }
-          }
-
-          const singleLineWidth = Math.max(
-            0,
-            rowSingleLineWidth - singleLineWidthOffsetRef.current
-          );
-
-          if (
-            text.length > 0 &&
-            singleLineWidth <= 0 &&
-            multilineMeasureRetryRef.current < MAX_MULTILINE_MEASURE_RETRIES
-          ) {
-            multilineMeasureRetryRef.current += 1;
-            if (multilineMeasureFrameRef.current !== null) {
-              cancelAnimationFrame(multilineMeasureFrameRef.current);
-            }
-            multilineMeasureFrameRef.current = requestAnimationFrame(() => {
-              multilineMeasureFrameRef.current = null;
-              updateMultilineLayout();
-            });
-            return;
-          }
-
-          multilineMeasureRetryRef.current = 0;
-          let nextMultiline = hasMultipleBlocks || hasExplicitNewlines;
-          if (!nextMultiline && text.length > 0) {
-            const styleKey = [
-              computedStyle.font,
-              computedStyle.lineHeight,
-              computedStyle.letterSpacing,
-              computedStyle.fontKerning,
-              computedStyle.fontFeatureSettings,
-              computedStyle.fontVariationSettings,
-              computedStyle.textTransform,
-              computedStyle.textIndent,
-              computedStyle.tabSize,
-            ].join('|');
-            const cachedMeasurement = measurementCacheRef.current;
-
-            if (
-              cachedMeasurement?.text === text &&
-              cachedMeasurement.singleLineWidth === singleLineWidth &&
-              cachedMeasurement.styleKey === styleKey
-            ) {
-              nextMultiline = cachedMeasurement.result;
-            } else {
-              textMeasurer.style.font = computedStyle.font;
-              textMeasurer.style.lineHeight = computedStyle.lineHeight;
-              textMeasurer.style.letterSpacing = computedStyle.letterSpacing;
-              textMeasurer.style.fontKerning = computedStyle.fontKerning;
-              textMeasurer.style.fontFeatureSettings = computedStyle.fontFeatureSettings;
-              textMeasurer.style.fontVariationSettings = computedStyle.fontVariationSettings;
-              textMeasurer.style.textTransform = computedStyle.textTransform;
-              textMeasurer.style.textIndent = computedStyle.textIndent;
-              textMeasurer.style.tabSize = computedStyle.tabSize;
-              // Measure against a hidden clone instead of the live editable so we can ask
-              // "would this wrap at single-line width?" without the current layout feeding
-              // back into the answer.
-              const measureHeight = (content: string, width: string): number => {
-                textMeasurer.style.width = width;
-                textMeasurer.textContent = normalizeMeasurementText(content);
-                return textMeasurer.scrollHeight;
-              };
-              const singleLineHeight = measureHeight('M', 'max-content');
-              const measuredHeight = measureHeight(text, `${Math.max(singleLineWidth, 0)}px`);
-              nextMultiline = measuredHeight > singleLineHeight + MULTILINE_HEIGHT_EPSILON;
-              measurementCacheRef.current = {
-                result: nextMultiline,
-                singleLineWidth,
-                styleKey,
-                text,
-              };
-            }
-          } else {
-            measurementCacheRef.current = null;
-          }
-
-          isMultilineRef.current = nextMultiline;
-          setIsMultiline(nextMultiline);
-        } else {
-          const nextMultiline = hasMultipleBlocks || hasExplicitNewlines;
-          isMultilineRef.current = nextMultiline;
-          setIsMultiline(nextMultiline);
-        }
-      },
-      [editor, layoutIsMultiline]
-    );
-
-    useEffect(() => {
-      const root = rootRef.current;
-      if (!root) {
-        return undefined;
-      }
-
-      const measurerHost = document.createElement('div');
-      const textMeasurer = document.createElement('div');
-      measurerHost.setAttribute('aria-hidden', 'true');
-      textMeasurer.setAttribute('aria-hidden', 'true');
-      if (editableName) {
-        textMeasurer.dataset.editorMeasurer = editableName;
-      }
-      Object.assign(measurerHost.style, {
-        position: 'absolute',
-        inset: '0',
-        width: '0',
-        height: '0',
-        overflow: 'hidden',
-        pointerEvents: 'none',
-        visibility: 'hidden',
-        zIndex: '-1',
-      });
-      Object.assign(textMeasurer.style, {
-        padding: '0',
-        border: '0',
-        margin: '0',
-        whiteSpace: 'pre-wrap',
-        overflowWrap: 'break-word',
-        wordBreak: 'break-word',
-        boxSizing: 'border-box',
-      });
-      measurerHost.appendChild(textMeasurer);
-      root.appendChild(measurerHost);
-      textMeasurerRef.current = textMeasurer;
-
-      return () => {
-        measurementCacheRef.current = null;
-        textMeasurerRef.current = null;
-        measurerHost.remove();
-      };
-    }, [editableName]);
-
-    useEffect(
-      () => () => {
-        if (multilineMeasureFrameRef.current !== null) {
-          cancelAnimationFrame(multilineMeasureFrameRef.current);
-        }
-        measurementCacheRef.current = null;
-        multilineMeasureRetryRef.current = 0;
-      },
-      []
-    );
-
-    const cancelFocusScroll = useCallback(() => {
-      window.clearTimeout(focusScrollTimerRef.current);
-    }, []);
-
-    useEffect(() => cancelFocusScroll, [cancelFocusScroll]);
-
-    const queueMultilineMeasurement = useCallback(
-      (resetRetry = true) => {
-        if (multilineMeasureFrameRef.current !== null) {
-          cancelAnimationFrame(multilineMeasureFrameRef.current);
-        }
-        if (resetRetry) {
-          multilineMeasureRetryRef.current = 0;
-        }
-        multilineMeasureFrameRef.current = requestAnimationFrame(() => {
-          multilineMeasureFrameRef.current = null;
-          updateMultilineLayout();
-        });
-      },
-      [updateMultilineLayout]
-    );
-
-    useEffect(() => {
-      if (typeof ResizeObserver === 'undefined') {
-        return undefined;
-      }
-
-      const observer = new ResizeObserver(() => {
-        queueMultilineMeasurement();
-      });
-      const observedElements = [rowRef.current, beforeRef.current, afterRef.current].filter(
-        (element): element is HTMLDivElement => element !== null
-      );
-
-      observedElements.forEach((element) => observer.observe(element));
-
-      return () => observer.disconnect();
-    }, [
-      queueMultilineMeasurement,
-      updateMultilineLayout,
-      hasBefore,
-      hasAfter,
-      showResponsiveAfterInline,
-    ]);
-
-    useLayoutEffect(() => {
-      updateMultilineLayout(latestValueRef.current);
-    }, [measurementVersion, updateMultilineLayout]);
-
-    const handleChange = useCallback(
-      (value: Descendant[]) => {
-        latestValueRef.current = value;
-        measurementCacheRef.current = null;
-        if (multilineMeasureFrameRef.current !== null) {
-          cancelAnimationFrame(multilineMeasureFrameRef.current);
-          multilineMeasureFrameRef.current = null;
-        }
-        setMeasurementVersion((version) => version + 1);
-        onChange?.(value);
+    const handleDocumentChange = useCallback(
+      (document: EditorDocument) => {
+        onChange?.(document);
       },
       [onChange]
     );
 
-    const renderElement = useCallback(
-      (props: RenderElementProps) => <RenderElement {...props} />,
-      []
-    );
-
-    const renderLeaf = useCallback((props: RenderLeafProps) => <RenderLeaf {...props} />, []);
-
-    const latestRef = useRef({ editor, onKeyDown, onKeyUp, onPaste, shortcutOverrides });
-    latestRef.current = { editor, onKeyDown, onKeyUp, onPaste, shortcutOverrides };
-
-    const handleKeydown: KeyboardEventHandler = useCallback((evt) => {
-      const { editor: slate, onKeyDown: keyDown, shortcutOverrides: overrides } = latestRef.current;
-      keyDown?.(evt);
-
-      const shortcutToggled = toggleKeyboardShortcut(slate, evt, overrides);
-      if (shortcutToggled) evt.preventDefault();
-    }, []);
-
-    const handleKeyUp: KeyboardEventHandler = useCallback((evt) => {
-      latestRef.current.onKeyUp?.(evt);
-    }, []);
-
-    const handlePaste: ClipboardEventHandler = useCallback((evt) => {
-      const { editor: slate, onPaste: paste } = latestRef.current;
-      paste?.(evt);
-      if (evt.isDefaultPrevented() || !iosApp() || hasPasteData(evt.clipboardData)) return;
-
-      evt.preventDefault();
-      readClipboardText()
-        .then((text) => {
-          if (text) insertPastedText(slate, text);
-        })
-        .catch((err: unknown) => {
-          log.warn('Failed to read the native clipboard on paste:', err);
-        });
-    }, []);
-
-    const handleBlur = useCallback(
-      (evt: FocusEvent<HTMLDivElement>) => {
-        cancelFocusScroll();
-        if (!isMobileOrTablet()) return;
-        if (suppressBlurRefocusRef?.current) return;
-        const next = evt.relatedTarget as HTMLElement | null;
-        if (!next) return;
-        if (next !== editableRef.current && next.isContentEditable) return;
-        ReactEditor.focus(latestRef.current.editor);
-      },
-      [cancelFocusScroll, suppressBlurRefocusRef]
-    );
-
-    const handleFocus = useCallback(() => {
-      if (!isMobileOrTablet()) return;
-      cancelFocusScroll();
-      const scrollIn = () => {
-        if (editableRef.current?.contains(document.activeElement)) {
-          rootRef.current?.scrollIntoView({ block: 'nearest' });
-        }
-      };
-      window.visualViewport?.addEventListener('resize', scrollIn, { once: true });
-      focusScrollTimerRef.current = window.setTimeout(scrollIn, 500);
-    }, [cancelFocusScroll]);
-
-    const renderPlaceholder = useCallback(
-      ({ attributes, children }: RenderPlaceholderProps) => (
-        <span {...attributes} className={css.EditorPlaceholderContainer}>
-          {/* Inner component to style the actual text position and appearance */}
-          <Text as="span" className={css.EditorPlaceholderTextVisual} truncate>
-            {children}
-          </Text>
-        </span>
-      ),
-      []
-    );
-
     return (
-      <div className={`${css.Editor} ${className || ''}`} ref={setRootRef}>
-        <Slate editor={editor} initialValue={slateInitialValue} onChange={handleChange}>
-          {top}
-          <Box
-            ref={rowRef}
-            className={`${css.EditorRow} ${layoutIsMultiline ? css.EditorRowMultiline : ''} ${showResponsiveAfterInFooter ? css.EditorRowMultilineWithResponsiveAfter : ''}`}
-            alignItems="Start"
-            style={{ display: after ? 'grid' : 'flex' }}
-          >
-            {hasBefore && (
-              <Box
-                ref={beforeRef}
-                className={`${css.EditorOptions} ${layoutIsMultiline ? css.EditorOptionsMultiline : ''}`}
-                alignItems="Center"
-                gap="100"
-                shrink="No"
-              >
-                {before}
-              </Box>
-            )}
-            <Scroll
-              className={`${css.EditorTextareaScroll} ${layoutIsMultiline ? css.EditorTextareaScrollMultiline : ''}`}
-              variant={variant}
-              style={{
-                maxHeight: showResponsiveAfterInFooter ? undefined : maxHeight,
-              }}
-              size="300"
-              visibility="Always"
-              hideTrack
+      <div ref={setRootRef} className={`${css.Editor} ${className ?? ''}`}>
+        {top}
+        <Box
+          className={`${css.EditorRow} ${layoutIsMultiline ? css.EditorRowMultiline : ''} ${showResponsiveAfterInFooter ? css.EditorRowMultilineWithResponsiveAfter : ''}`}
+          alignItems="Start"
+          style={{ display: after ? 'grid' : 'flex' }}
+        >
+          {before && (
+            <Box
+              className={`${css.EditorOptions} ${layoutIsMultiline ? css.EditorOptionsMultiline : ''}`}
+              alignItems="Center"
+              gap="100"
+              shrink="No"
             >
-              <MemoizedEditable
-                ref={editableRef}
-                data-editable-name={editableName}
-                className={`${css.EditorTextarea} ${alwaysInlineEditor ? css.EditorTextareaInline : ''}`}
-                placeholder={placeholder}
-                renderPlaceholder={renderPlaceholder}
-                renderElement={renderElement}
-                renderLeaf={renderLeaf}
-                onKeyDown={handleKeydown}
-                onKeyUp={handleKeyUp}
-                onPaste={handlePaste}
-                // Defer to OS capitalization setting (respects iOS sentence-case toggle).
-                autoCapitalize="sentences"
-                autoCorrect="on"
-                enterKeyHint={enterKeyHint}
-                // keeps focus after pressing send, but yields to another editor.
-                onBlur={handleBlur}
-                // Once the virtual keyboard has settled, make sure the composer is
-                // not left hidden behind it.
-                onFocus={handleFocus}
-                style={EDITABLE_STYLE}
-              />
-            </Scroll>
-            {(hasAfter || showResponsiveAfterInline) && (
-              <Box
-                ref={afterRef}
-                className={`${css.EditorOptions} ${layoutIsMultiline ? css.EditorOptionsMultiline : ''} ${layoutIsMultiline ? css.EditorOptionsAfterMultiline : ''}`}
-                alignItems="Center"
-                gap="100"
-                shrink="No"
-              >
-                {showResponsiveAfterInline && responsiveAfter}
-                {after}
-              </Box>
-            )}
-            {showResponsiveAfterInFooter && (
-              <Box
-                className={css.EditorResponsiveAfterMultiline}
-                alignItems="Center"
-                justifyContent="End"
-                gap="100"
-              >
-                {responsiveAfter}
-              </Box>
-            )}
-          </Box>
-          {bottom}
-        </Slate>
+              {before}
+            </Box>
+          )}
+          <Scroll
+            className={`${css.EditorTextareaScroll} ${layoutIsMultiline ? css.EditorTextareaScrollMultiline : ''}`}
+            variant={variant}
+            style={{ maxHeight: showResponsiveAfterInFooter ? undefined : maxHeight }}
+            size="300"
+            visibility="Always"
+            hideTrack
+          >
+            <ProseMirrorEditable
+              controller={editor}
+              editableName={editableName}
+              editorClassName={`${css.EditorTextarea} ${alwaysInlineEditor ? css.EditorTextareaInline : ''}`}
+              placeholder={placeholder}
+              enterKeyHint={enterKeyHint}
+              onDocumentChange={handleDocumentChange}
+              onKeyDown={handleKeyDown}
+              onKeyUp={onKeyUp}
+              onPaste={handlePaste}
+              onBlur={(event) => {
+                if (!isMobileOrTablet() || suppressBlurRefocusRef?.current) return;
+                const next = event.relatedTarget as HTMLElement | null;
+                if (!next || (next !== event.currentTarget && next.isContentEditable)) return;
+                editor.focus();
+              }}
+              onFocus={() => {
+                if (!isMobileOrTablet()) return;
+                const editable = document.activeElement;
+                window.clearTimeout(focusScrollTimerRef.current);
+                const scrollIntoView = () => {
+                  if (editable && editable === document.activeElement) {
+                    rootRef.current?.scrollIntoView({ block: 'nearest' });
+                  }
+                };
+                window.visualViewport?.addEventListener('resize', scrollIntoView, { once: true });
+                focusScrollTimerRef.current = window.setTimeout(scrollIntoView, 500);
+              }}
+            />
+          </Scroll>
+          {(after || (responsiveAfter && !showResponsiveAfterInFooter)) && (
+            <Box
+              className={`${css.EditorOptions} ${layoutIsMultiline ? `${css.EditorOptionsMultiline} ${css.EditorOptionsAfterMultiline}` : ''}`}
+              alignItems="Center"
+              gap="100"
+              shrink="No"
+            >
+              {!showResponsiveAfterInFooter && responsiveAfter}
+              {after}
+            </Box>
+          )}
+          {showResponsiveAfterInFooter && (
+            <Box
+              className={css.EditorResponsiveAfterMultiline}
+              alignItems="Center"
+              justifyContent="End"
+              gap="100"
+            >
+              {responsiveAfter}
+            </Box>
+          )}
+        </Box>
+        {bottom}
       </div>
     );
   }

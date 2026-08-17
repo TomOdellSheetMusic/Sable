@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useAtom, useAtomValue } from 'jotai';
-import { createEditor, Transforms } from 'slate';
+import { ProseMirrorEditorController } from '$components/editor/prosemirrorController';
 import { M_POLL_START } from 'matrix-js-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RoomInput } from './RoomInput';
@@ -174,7 +174,7 @@ vi.mock('$components/editor', () => {
     },
     ANYWHERE_AUTOCOMPLETE_PREFIXES: [],
     BEGINNING_AUTOCOMPLETE_PREFIXES: [],
-    BlockType: { Paragraph: 'paragraph' },
+    BlockType: { Paragraph: 'paragraph', Command: 'command' },
     Command: { Poll: 'poll', Location: 'location' },
     CustomEditor,
     EmoticonAutocomplete: passthrough,
@@ -187,6 +187,7 @@ vi.mock('$components/editor', () => {
     focusEditor: vi.fn(),
     getAutocompleteQuery: vi.fn(),
     getBeginCommand: (editor: any) => editor.children[0]?.children?.[1]?.command,
+    getDocumentLinks: () => [],
     getLinks: () => [],
     getMentions: () => ({ users: new Set<string>(), room: undefined }),
     getPrevWorldRange: () => undefined,
@@ -546,9 +547,7 @@ function RoomInputHarness({
   threadRootId?: string;
 }) {
   const editor = useMemo(() => {
-    const nextEditor = createEditor();
-    nextEditor.children = [{ type: 'paragraph' as any, children: [{ text: '' }] }];
-    return nextEditor;
+    return new ProseMirrorEditorController();
   }, []);
   const [, setEditorRevision] = useState(0);
   const fileDropContainerRef = useMemo(() => ({ current: null }), []);
@@ -580,14 +579,12 @@ function RoomInputHarness({
     setSelectedFiles,
   ]);
   const setText = (text = 'retry me') => {
-    editor.children = [{ type: 'paragraph' as any, children: [{ text: '' }] }];
-    Transforms.select(editor, { path: [0, 0], offset: 0 });
-    Transforms.insertText(editor, text);
+    editor.setDocument([{ type: 'paragraph' as any, children: [{ text }] }]);
     fireEvent.input(screen.getByTestId('room-input-editor'));
     setEditorRevision((prev) => prev + 1);
   };
   const setCommand = (command: 'poll' | 'location') => {
-    editor.children = [
+    editor.setDocument([
       {
         type: 'paragraph' as any,
         children: [
@@ -596,7 +593,7 @@ function RoomInputHarness({
           { text: '' },
         ],
       },
-    ];
+    ]);
     fireEvent.input(screen.getByTestId('room-input-editor'));
   };
   return (

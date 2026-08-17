@@ -1,15 +1,14 @@
 import { useCallback, useRef, useState } from 'react';
 import { useAtomValue } from 'jotai';
-import { Transforms } from 'slate';
 import { Box, Text, config } from 'folds';
 import { EventType } from '$types/matrix-sdk';
-import { ReactEditor } from 'slate-react';
 import { isKeyHotkey } from 'is-hotkey';
 import { useStateEvent } from '$hooks/useStateEvent';
 
 import { usePowerLevelsContext } from '$hooks/usePowerLevels';
 import { useMatrixClient } from '$hooks/useMatrixClient';
-import { useEditor, resetEditor } from '$components/editor';
+import { useEditor } from '$components/editor';
+import { BlockType } from '$components/editor';
 import { Page } from '$components/page';
 import { useKeyDown } from '$hooks/useKeyDown';
 import { editableActiveElement } from '$utils/dom';
@@ -109,9 +108,8 @@ export function RoomView({ eventId }: { eventId?: string }) {
 
   const handleEditMessage = useCallback(
     (body: string) => {
-      resetEditor(editor);
-      if (body) Transforms.insertText(editor, body);
-      ReactEditor.focus(editor);
+      editor.setDocument(body ? [{ type: BlockType.Paragraph, children: [{ text: body }] }] : []);
+      editor.focus();
     },
     [editor]
   );
@@ -126,7 +124,7 @@ export function RoomView({ eventId }: { eventId?: string }) {
           return;
         }
         if (shouldFocusMessageField(evt) || isKeyHotkey('mod+v', evt)) {
-          ReactEditor.focus(editor);
+          editor.focus();
         }
       },
       [editor]

@@ -31,8 +31,6 @@ import type {
 import { MatrixError } from '$types/matrix-sdk';
 import { EventType, RelationType } from '$types/matrix-sdk';
 import { M_POLL_START } from 'matrix-js-sdk';
-import { ReactEditor } from 'slate-react';
-import { Editor, Point, Range, Transforms } from 'slate';
 import type { RectCords } from 'folds';
 import {
   Box,
@@ -52,33 +50,29 @@ import {
 import { Overlay, PopOut } from '$components/overlay-stack';
 
 import { useMatrixClient } from '$hooks/useMatrixClient';
-import type { AutocompleteQuery } from '$components/editor';
+import type {
+  EditorAutocompleteQuery,
+  ProseMirrorEditorController,
+} from '$components/editor/prosemirrorController';
 import {
   AutocompletePrefix,
   createEmoticonElement,
   CustomEditor,
   customHtmlEqualsPlainText,
-  getAutocompleteQuery,
-  getPrevWorldRange,
-  resetEditor,
   RoomMentionAutocomplete,
   toMatrixCustomHTML,
   toPlainText,
   trimCustomHtml,
   UserMentionAutocomplete,
   EmoticonAutocomplete,
-  moveCursor,
-  resetEditorHistory,
-  isEmptyEditor,
   ANYWHERE_AUTOCOMPLETE_PREFIXES,
   BEGINNING_AUTOCOMPLETE_PREFIXES,
   MarkdownFormattingToolbarBottom,
   MarkdownFormattingToolbarToggle,
-  focusEditor,
-  replaceWithElement,
 } from '$components/editor';
 import { stripMarkdownEscapesForHiddenPreviews } from './message/hiddenLinkPreviews';
 import { plainToEditorInput } from '$components/editor/input';
+import type { EditorDocument } from '$components/editor/model';
 import type { GifData } from '$components/emoji-board';
 import { EmojiBoard, EmojiBoardTab } from '$components/emoji-board';
 import { UseStateProvider } from '$components/UseStateProvider';
@@ -287,7 +281,7 @@ interface ReplyClaim {
 }
 
 interface Submission {
-  children: Editor['children'];
+  children: EditorDocument;
   epoch: number;
   replyClaim: ReplyClaim | undefined;
 }
@@ -303,7 +297,7 @@ interface SendContentsOptions {
 }
 
 interface RoomInputProps {
-  editor: Editor;
+  editor: ProseMirrorEditorController;
   fileDropContainerRef: RefObject<HTMLElement>;
   roomId: string;
   room: Room;
@@ -467,7 +461,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       []
     );
     const [autocompleteQuery, setAutocompleteQuery] =
-      useState<AutocompleteQuery<AutocompletePrefix>>();
+      useState<EditorAutocompleteQuery<AutocompletePrefix>>();
     const [isQuickTextReact, setQuickTextReact] = useState(false);
 
     const replyDraftBase = useMemo(
@@ -633,15 +627,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const [hasText, setHasText] = useState(false);
     const lastEncryptionPreparationAt = useRef(0);
     const detectAutocomplete = useCallback(() => {
-      const firstPosition = Editor.start(editor, []);
-      const secondChar = Editor.after(editor, firstPosition, {
-        distance: 2,
-        unit: 'character',
-      });
-      const quickReactPrefix = Editor.string(
-        editor,
-        Editor.range(editor, firstPosition, secondChar)
-      );
+      const quickReactPrefix = editor.getText().slice(0, 2);
       if (quickReactPrefix === '+#') {
         setQuickTextReact(true);
         setAutocompleteQuery(undefined);
@@ -649,24 +635,15 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       }
       setQuickTextReact(false);
 
-      const prevWordRange = getPrevWorldRange(editor);
-      if (!prevWordRange) {
-        setAutocompleteQuery(undefined);
-        return;
-      }
-
-      const isRangeAtBeginning = !Point.isAfter(Range.start(prevWordRange), firstPosition);
       const query =
-        (isRangeAtBeginning
-          ? getAutocompleteQuery(editor, prevWordRange, BEGINNING_AUTOCOMPLETE_PREFIXES)
-          : undefined) ??
-        getAutocompleteQuery(editor, prevWordRange, ANYWHERE_AUTOCOMPLETE_PREFIXES);
+        editor.getAutocompleteQuery(BEGINNING_AUTOCOMPLETE_PREFIXES, true) ??
+        editor.getAutocompleteQuery(ANYWHERE_AUTOCOMPLETE_PREFIXES);
 
       setAutocompleteQuery(query);
     }, [editor]);
 
     const handleEditorChange = useCallback(() => {
-      setHasText(!isEmptyEditor(editor));
+      setHasText(!editor.isEmpty());
       detectAutocomplete();
       if (!room.hasEncryptionStateEvent()) return;
 
@@ -789,23 +766,22 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     }, [threadRootId, setReplyDraft, mx]);
 
     useEffect(() => {
-      Transforms.insertFragment(editor, msgDraft);
+      editor.appendDocument(msgDraft);
     }, [editor, msgDraft]);
 
     const editingStateRef = useRef(false);
-    const preEditDraftRef = useRef<Editor['children']>();
+    const preEditDraftRef = useRef<EditorDocument>();
     useEffect(
       () => () => {
         if (editingStateRef.current) {
-          setMsgDraft(structuredClone(preEditDraftRef.current ?? []));
-        } else if (isEmptyEditor(editor)) {
+          setMsgDraft(structuredClone(preEditDraftRef.current ?? []) as EditorDocument);
+        } else if (editor.isEmpty()) {
           setMsgDraft([]);
         } else {
           const parsedDraft = structuredClone(editor.children);
-          setMsgDraft(parsedDraft);
+          setMsgDraft(parsedDraft as EditorDocument);
         }
-        resetEditor(editor);
-        resetEditorHistory(editor);
+        editor.clear();
       },
       [draftKey, editor, setMsgDraft]
     );
@@ -890,14 +866,11 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
             mentionOptions
           );
 
-          resetEditor(editor);
-          resetEditorHistory(editor);
-          Transforms.insertFragment(editor, initialValue);
+          editor.setDocument(initialValue);
 
           scheduleEditorRaf(() => {
             try {
-              ReactEditor.focus(editor);
-              moveCursor(editor);
+              editor.focus();
             } catch {
               // Ignore focus error
             }
@@ -908,9 +881,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         editingStateRef.current = false;
         const previousDraft = preEditDraftRef.current;
         if (prevEditingEventId.current && previousDraft) {
-          resetEditor(editor);
-          resetEditorHistory(editor);
-          Transforms.insertFragment(editor, previousDraft);
+          editor.setDocument(previousDraft);
         }
         preEditDraftRef.current = undefined;
         if (
@@ -919,8 +890,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         ) {
           scheduleEditorRaf(() => {
             try {
-              const domNode = ReactEditor.toDOMNode(editor, editor);
-              domNode.blur();
+              editor.blur();
               (document.activeElement as HTMLElement)?.blur();
             } catch {
               // Ignore blur error
@@ -978,8 +948,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         if (newId && newId !== threadRootId) {
           scheduleEditorRaf(() => {
             try {
-              ReactEditor.focus(editor);
-              moveCursor(editor);
+              editor.focus();
             } catch {
               // Ignore focus errors
             }
@@ -987,8 +956,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         } else if (!newId && prevId && prevId !== threadRootId && !editId) {
           scheduleEditorRaf(() => {
             try {
-              const domNode = ReactEditor.toDOMNode(editor, editor);
-              domNode.blur();
+              editor.blur();
               (document.activeElement as HTMLElement)?.blur();
             } catch {
               // Ignore blur errors
@@ -1096,8 +1064,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           replyClaim: claimReplyDraft ? claimReply() : undefined,
         };
         if (clearEditor) {
-          resetEditor(editor);
-          resetEditorHistory(editor);
+          editor.clear();
           setInputKey((prev) => prev + 1);
           imagePacksUsedRef.current.clear();
           sendTypingStatus(false);
@@ -1112,11 +1079,11 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         if (
           !mountedRef.current ||
           submission.epoch !== draftEpochRef.current ||
-          !isEmptyEditor(editor)
+          !editor.isEmpty()
         ) {
           return;
         }
-        Transforms.insertFragment(editor, submission.children);
+        editor.appendDocument(submission.children);
       },
       [editor, restoreReplyClaim]
     );
@@ -1129,7 +1096,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       eventType,
       onContentSent,
     }: SendContentsOptions) => {
-      const plainText = toPlainText(submission.children).trim();
+      const plainText = toPlainText(submission.children as EditorDocument).trim();
       const submittedReplyDraft = submission.replyClaim?.snapshot;
       const submittedSilentReply = submission.replyClaim?.silentReply ?? silentReply;
 
@@ -1301,10 +1268,10 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       submission: Submission,
       isLive: () => boolean
     ): Promise<boolean> => {
-      const plainText = toPlainText(submission.children).trim();
+      const plainText = toPlainText(submission.children as EditorDocument).trim();
       const caption = plainText.length > 0 ? plainText : undefined;
       let customHtml = trimCustomHtml(
-        toMatrixCustomHTML(submission.children, {
+        toMatrixCustomHTML(submission.children as EditorDocument, {
           stripNickname: true,
           room,
         })
@@ -1408,7 +1375,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const handleCloseAutocomplete = useCallback(() => {
       setAutocompleteQuery((prev) => {
         if (prev !== undefined) {
-          focusEditor(editor);
+          editor.focus();
         }
         return undefined;
       });
@@ -1436,8 +1403,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           }
         }
 
-        resetEditor(editor);
-        resetEditorHistory(editor);
+        editor.clear();
         sendTypingStatus(false);
         handleCloseAutocomplete();
       },
@@ -1458,7 +1424,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         const submittedReplyDraft = submission.replyClaim?.snapshot;
         const submittedSilentReply = submission.replyClaim?.silentReply ?? silentReply;
         if (editingEvent && isMobile) {
-          const content = buildEditReplacement(submission.children, {
+          const content = buildEditReplacement(submission.children as EditorDocument, {
             mx,
             room,
             roomId,
@@ -1500,7 +1466,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           }
         }
 
-        const outgoing = await buildOutgoingMessage(submission.children, {
+        const outgoing = await buildOutgoingMessage(submission.children as EditorDocument, {
           mx,
           room,
           roomId,
@@ -1761,9 +1727,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           }
         }
 
-        if (isKeyHotkey('arrowup', evt) && isEmptyEditor(editor)) {
-          const { selection } = editor;
-          if (selection && Editor.isStart(editor, selection.anchor, [])) {
+        if (isKeyHotkey('arrowup', evt) && editor.isEmpty()) {
+          if (editor.isSelectionAtStart()) {
             evt.preventDefault();
             onEditLastMessage?.();
             return;
@@ -1784,8 +1749,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           evt.preventDefault();
           if (editingEvent && isMobileOrTablet()) {
             onCancelEdit?.();
-            resetEditor(editor);
-            resetEditorHistory(editor);
+            editor.clear();
             return;
           }
           if (showAudioRecorder) {
@@ -1829,7 +1793,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         }
 
         if (!hideActivity) {
-          sendTypingStatus(!isEmptyEditor(editor));
+          sendTypingStatus(!editor.isEmpty());
         }
 
         detectAutocomplete();
@@ -1840,15 +1804,15 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const handleEmoticonSelect = (key: string, shortcode: string) => {
       const emoticonEl = createEmoticonElement(key, shortcode);
       if (autocompleteQuery) {
-        replaceWithElement(editor, autocompleteQuery.range, emoticonEl);
+        editor.insertInline(emoticonEl, autocompleteQuery.from, autocompleteQuery.to);
       } else {
-        editor.insertNode(emoticonEl);
+        editor.insertInline(emoticonEl);
       }
       if (!imagePacksUsedRef.current.has(key)) {
         const imgPkRef = getImagePackReferencesForMxc(key, mx, ImageUsage.Emoticon, room);
         if (imgPkRef?.room_id && imgPkRef?.shortcode) imagePacksUsedRef.current.set(key, imgPkRef);
       }
-      moveCursor(editor);
+      editor.insertText(' ');
       handleCloseAutocomplete();
     };
 
@@ -1932,7 +1896,11 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           const sent = await handleSendContents({ contents: [content], submission, isLive });
           // When the editor has text, the reply is not attached to the GIF, so hand the
           // claim back for the follow-up message to carry it.
-          if (sent && submission.replyClaim && toPlainText(submission.children).trim().length > 0)
+          if (
+            sent &&
+            submission.replyClaim &&
+            toPlainText(submission.children as EditorDocument).trim().length > 0
+          )
             restoreReplyClaim(submission.replyClaim);
           return sent;
         } catch (error) {
@@ -1971,24 +1939,24 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         {autocompleteQuery?.prefix === AutocompletePrefix.RoomMention && (
           <RoomMentionAutocomplete
             roomId={roomId}
-            editor={editor}
-            query={autocompleteQuery}
+            controller={editor}
+            query={autocompleteQuery!}
             requestClose={handleCloseAutocomplete}
           />
         )}
         {autocompleteQuery?.prefix === AutocompletePrefix.UserMention && (
           <UserMentionAutocomplete
             room={room}
-            editor={editor}
-            query={autocompleteQuery}
+            controller={editor}
+            query={autocompleteQuery!}
             requestClose={handleCloseAutocomplete}
           />
         )}
         {autocompleteQuery?.prefix === AutocompletePrefix.Emoticon && (
           <EmoticonAutocomplete
             imagePackRooms={imagePackRooms}
-            editor={editor}
-            query={autocompleteQuery}
+            controller={editor}
+            query={autocompleteQuery!}
             requestClose={handleCloseAutocomplete}
             onEmoticonSelected={handleEmoticonSelect}
           />
@@ -1996,10 +1964,10 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         {autocompleteQuery?.prefix === AutocompletePrefix.Reaction &&
           (canSendReaction ? (
             <EmoticonAutocomplete
-              title={`React with :${autocompleteQuery.text}`}
+              title={`React with :${autocompleteQuery!.text}`}
               imagePackRooms={imagePackRooms}
-              editor={editor}
-              query={autocompleteQuery}
+              controller={editor}
+              query={autocompleteQuery!}
               requestClose={handleCloseAutocomplete}
               onEmoticonSelected={handleQuickReact}
             />
@@ -2011,8 +1979,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         {autocompleteQuery?.prefix === AutocompletePrefix.Command && (
           <CommandAutocomplete
             room={room}
-            editor={editor}
-            query={autocompleteQuery}
+            controller={editor}
+            query={autocompleteQuery!}
             requestClose={handleCloseAutocomplete}
           />
         )}
@@ -2139,8 +2107,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                     <IconButton
                       onClick={() => {
                         onCancelEdit?.();
-                        resetEditor(editor);
-                        resetEditorHistory(editor);
+                        editor.clear();
                       }}
                       variant="SurfaceVariant"
                       style={{ background: 'transparent' }}
@@ -2720,7 +2687,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
               )}
             </>
           }
-          bottom={<MarkdownFormattingToolbarBottom />}
+          bottom={<MarkdownFormattingToolbarBottom controller={editor} />}
         />
         {showSchedulePicker && !threadRootId && (
           <SchedulePickerDialog

@@ -1,4 +1,5 @@
 import FileSaver from 'file-saver';
+import * as Sentry from '@sentry/react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { type as osType } from '@tauri-apps/plugin-os';
 import { showToast } from '$state/toast';
@@ -55,6 +56,44 @@ export const getDownloadFilename = (
   fallback = 'download'
 ): string => sanitizeDownloadFilename(getAttachmentFilename(filename, body, fallback), fallback);
 
+const splitExtension = (filename: string): [stem: string, extension: string] => {
+  const at = filename.lastIndexOf('.');
+  return at > 0 ? [filename.slice(0, at), filename.slice(at)] : [filename, ''];
+};
+
+// MediaStore gives up after 32 numbered variants, and resolves the final name
+// when the pending flag clears rather than on create, so retry the whole save.
+const saveWithUniqueName = async (
+  filename: string,
+  save: (filename: string) => Promise<void>
+): Promise<void> => {
+  try {
+    await save(filename);
+  } catch {
+    const [stem, extension] = splitExtension(filename);
+    await save(sanitizeDownloadFilename(`${stem}-${Date.now()}${extension}`));
+  }
+};
+
+const reportSaveFailure = (
+  error: unknown,
+  target: 'downloads' | 'gallery' | 'photos',
+  filename: string,
+  mimeType?: string
+): void => {
+  // Name first: names contain spaces, so `\S*` would leave the rest behind.
+  const scrubbed = getErrorMessage(error)
+    .split(splitExtension(filename)[0])
+    .join('[FILENAME]')
+    .replace(/\/(?:storage|data|var|Users|home)\/\S*/g, '[PATH]')
+    .replace(/\b(_display_name|_data|title|relative_path)=\S*/g, '$1=[REDACTED]');
+
+  Sentry.captureException(new Error(scrubbed), {
+    tags: { feature: 'media-save', target, platform: osType() },
+    extra: { mimeType },
+  });
+};
+
 async function resolveBlob(input: Blob | string): Promise<Blob> {
   if (typeof input !== 'string') return input;
   return fetchMediaBlob(getTauriMediaSourceUrl(input) ?? input);
@@ -80,7 +119,6 @@ export async function saveMediaToGallery(
 
   if (platform === 'android') {
     const { AndroidFs, AndroidPublicImageDir } = await import('tauri-plugin-android-fs-api');
-    let uri: Awaited<ReturnType<typeof AndroidFs.createNewPublicImageFile>> | undefined;
     try {
       const blob = await resolveBlob(input);
       const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -90,18 +128,25 @@ export async function saveMediaToGallery(
         if (!granted) throw new Error('Storage permission was denied');
       }
 
-      uri = await AndroidFs.createNewPublicImageFile(
-        AndroidPublicImageDir.Pictures,
-        filename,
-        mediaMimeType,
-        { isPending: true, requestPermission: true }
-      );
-      await AndroidFs.writeFile(uri, bytes);
-      await AndroidFs.setPublicFilePending(uri, false);
-      await AndroidFs.scanPublicFile(uri);
+      await saveWithUniqueName(filename, async (name) => {
+        const uri = await AndroidFs.createNewPublicImageFile(
+          AndroidPublicImageDir.Pictures,
+          name,
+          mediaMimeType,
+          { isPending: true, requestPermission: true }
+        );
+        try {
+          await AndroidFs.writeFile(uri, bytes);
+          await AndroidFs.setPublicFilePending(uri, false);
+          await AndroidFs.scanPublicFile(uri);
+        } catch (error) {
+          await AndroidFs.removeFile(uri).catch(() => undefined);
+          throw error;
+        }
+      });
       showToast('Saved to Gallery');
     } catch (error) {
-      if (uri) await AndroidFs.removeFile(uri).catch(() => undefined);
+      reportSaveFailure(error, 'gallery', filename, mediaMimeType);
       showToast(`Failed to save to gallery: ${getErrorMessage(error)}`);
     }
     return;
@@ -118,6 +163,7 @@ export async function saveMediaToGallery(
     });
     showToast('Saved to Photos');
   } catch (error) {
+    reportSaveFailure(error, 'photos', filename, mediaMimeType);
     showToast(`Failed to save to photos: ${getErrorMessage(error)}`);
   }
 }
@@ -142,28 +188,29 @@ export async function saveFileToDevice(
       if (osType() === 'android') {
         const { AndroidFs, AndroidPublicGeneralPurposeDir } =
           await import('tauri-plugin-android-fs-api');
-        let uri: Awaited<ReturnType<typeof AndroidFs.createNewPublicFile>> | undefined;
-        try {
-          if (!(await AndroidFs.checkPublicFilesPermission())) {
-            const granted = await AndroidFs.requestPublicFilesPermission();
-            if (!granted) throw new Error('Storage permission was denied');
-          }
+        if (!(await AndroidFs.checkPublicFilesPermission())) {
+          const granted = await AndroidFs.requestPublicFilesPermission();
+          if (!granted) throw new Error('Storage permission was denied');
+        }
 
-          uri = await AndroidFs.createNewPublicFile(
+        await saveWithUniqueName(filename, async (name) => {
+          const uri = await AndroidFs.createNewPublicFile(
             AndroidPublicGeneralPurposeDir.Download,
-            filename,
+            name,
             mimeType || blob.type || null,
             { isPending: true, requestPermission: true }
           );
-          await AndroidFs.writeFile(uri, bytes);
-          await AndroidFs.setPublicFilePending(uri, false);
-          await AndroidFs.scanPublicFile(uri);
-          showToast('Saved to Downloads');
-          return 'saved';
-        } catch (error) {
-          if (uri) await AndroidFs.removeFile(uri).catch(() => undefined);
-          throw error;
-        }
+          try {
+            await AndroidFs.writeFile(uri, bytes);
+            await AndroidFs.setPublicFilePending(uri, false);
+            await AndroidFs.scanPublicFile(uri);
+          } catch (error) {
+            await AndroidFs.removeFile(uri).catch(() => undefined);
+            throw error;
+          }
+        });
+        showToast('Saved to Downloads');
+        return 'saved';
       }
 
       if (osType() === 'ios') {
@@ -181,6 +228,7 @@ export async function saveFileToDevice(
       if (saved) showToast('File saved');
       return saved ? 'saved' : 'cancelled';
     } catch (error) {
+      reportSaveFailure(error, 'downloads', filename, mimeType || blob.type || undefined);
       showToast(`Failed to save file: ${getErrorMessage(error)}`);
       return 'failed';
     }

@@ -9,7 +9,7 @@ import {
   useState,
   memo,
 } from 'react';
-import type { Editor } from 'slate';
+import type { ProseMirrorEditorController } from '$components/editor/prosemirrorController';
 import { useAtomValue, useSetAtom, useStore } from 'jotai';
 import type { Room, MatrixEvent, EventTimelineSet } from '$types/matrix-sdk';
 import { Direction, EventTimeline, EventType, MsgType, RoomEvent } from '$types/matrix-sdk';
@@ -316,7 +316,7 @@ const MemoizedTimelineItem = memo(
 export type RoomTimelineProps = {
   room: Room;
   eventId?: string;
-  editor: Editor;
+  editor: ProseMirrorEditorController;
   onEditorReset?: () => void;
   onEditLastMessageRef?: React.MutableRefObject<(() => void) | undefined>;
   editId?: string;

@@ -1,0 +1,257 @@
+import { baseKeymap, splitBlock } from 'prosemirror-commands';
+import { history, redo, undo } from 'prosemirror-history';
+import { keymap } from 'prosemirror-keymap';
+import { EditorState, Selection, TextSelection, type Transaction } from 'prosemirror-state';
+import { EditorView } from 'prosemirror-view';
+import { Fragment, Slice, type Node as ProseMirrorNode } from 'prosemirror-model';
+import type { EditorDocument, InlineToken } from './model';
+import { emptyEditorDocument, isEditorText } from './model';
+import type { EditorRenderContext } from './prosemirrorNodeViews';
+import {
+  beginCommandPlugin,
+  buildEditorNodeViews,
+  defaultEditorRenderContext,
+} from './prosemirrorNodeViews';
+import {
+  editorSchema,
+  fromProseMirrorDocument,
+  toProseMirrorDocument,
+  toProseMirrorInline,
+} from './prosemirrorSchema';
+
+const isProseMirrorDocumentEmpty = (doc: ProseMirrorNode): boolean =>
+  doc.childCount === 1 && doc.firstChild?.content.size === 0;
+
+export type EditorAutocompleteQuery<TPrefix extends string> = {
+  from: number;
+  prefix: TPrefix;
+  text: string;
+  to: number;
+};
+
+/**
+ * The sole editor-engine seam. Consumers exchange Sable documents and never
+ * retain an EditorState or EditorView.
+ */
+export class ProseMirrorEditorController {
+  private document: EditorDocument;
+  private listeners = new Set<(document: EditorDocument) => void>();
+  private renderContext: EditorRenderContext = defaultEditorRenderContext;
+  private view: EditorView | undefined;
+
+  constructor(initialDocument: EditorDocument = emptyEditorDocument()) {
+    this.document = structuredClone(initialDocument);
+  }
+
+  /** Rebuilding node views is a full redraw, so only react to a real change. */
+  setRenderContext(context: EditorRenderContext): void {
+    if (context === this.renderContext) return;
+    this.renderContext = context;
+    this.view?.setProps({ nodeViews: buildEditorNodeViews(() => this.renderContext) });
+  }
+
+  get children(): EditorDocument {
+    return this.getDocument();
+  }
+
+  getDocument(): EditorDocument {
+    return structuredClone(this.document);
+  }
+
+  isEmpty(): boolean {
+    const firstParagraph = this.document[0];
+    const firstToken = firstParagraph?.children[0];
+    return (
+      this.document.length === 1 &&
+      firstParagraph?.children.length === 1 &&
+      !!firstToken &&
+      isEditorText(firstToken) &&
+      firstToken.text === ''
+    );
+  }
+
+  isSelectionAtStart(): boolean {
+    const view = this.view;
+    return !!view && view.state.selection.empty && view.state.selection.from === 1;
+  }
+
+  getText(): string {
+    const view = this.view;
+    if (view) return view.state.doc.textBetween(0, view.state.doc.content.size, '\n', '\0');
+    return this.document
+      .map((paragraph) =>
+        paragraph.children.map((child) => (isEditorText(child) ? child.text : '')).join('')
+      )
+      .join('\n');
+  }
+
+  setDocument(document: EditorDocument): void {
+    this.document = structuredClone(document.length ? document : emptyEditorDocument());
+    if (this.view) {
+      const nextDocument = toProseMirrorDocument(this.document);
+      if (this.view.state.doc.eq(nextDocument)) return;
+      const transaction = this.view.state.tr.replaceWith(
+        0,
+        this.view.state.doc.content.size,
+        nextDocument.content
+      );
+      // Put the caret after the new content rather than wherever the old ended.
+      transaction.setSelection(Selection.atEnd(transaction.doc));
+      this.view.dispatch(transaction);
+      return;
+    }
+    this.notify();
+  }
+
+  appendDocument(document: EditorDocument): void {
+    if (!document.length) return;
+    this.setDocument(this.isEmpty() ? document : [...this.document, ...document]);
+  }
+
+  mount(element: HTMLElement, attributes?: Record<string, string>): () => void {
+    this.view?.destroy();
+    const state = EditorState.create({
+      doc: toProseMirrorDocument(this.document),
+      plugins: [
+        beginCommandPlugin,
+        history(),
+        keymap({ 'Mod-z': undo, 'Mod-Shift-z': redo, 'Mod-y': redo }),
+        // Enter is withheld on purpose: the host decides send vs newline.
+        // Binding it here also splits the paragraph, on top of whatever it did.
+        keymap(Object.fromEntries(Object.entries(baseKeymap).filter(([key]) => key !== 'Enter'))),
+      ],
+      schema: editorSchema,
+    });
+    this.view = new EditorView(
+      { mount: element },
+      {
+        attributes: (viewState) => ({
+          ...attributes,
+          'data-placeholder-visible': String(isProseMirrorDocumentEmpty(viewState.doc)),
+        }),
+        handlePaste: (view, event) => {
+          const text = event.clipboardData?.getData('text/plain');
+          if (text === undefined || text === '') return false;
+
+          const paragraphs = text
+            .split(/\r\n?|\n/)
+            .map((line) =>
+              editorSchema.nodes.paragraph.create(
+                undefined,
+                line ? editorSchema.text(line) : undefined
+              )
+            );
+          view.dispatch(
+            view.state.tr.replaceSelection(Slice.maxOpen(Fragment.from(paragraphs), true))
+          );
+          return true;
+        },
+        nodeViews: buildEditorNodeViews(() => this.renderContext),
+        state,
+        dispatchTransaction: (transaction: Transaction) => {
+          const view = this.view;
+          if (!view) return;
+          view.updateState(view.state.apply(transaction));
+          if (transaction.docChanged) {
+            this.document = fromProseMirrorDocument(view.state.doc);
+            this.notify();
+          }
+        },
+      }
+    );
+    return () => {
+      this.view?.destroy();
+      this.view = undefined;
+    };
+  }
+
+  focus(): void {
+    this.view?.focus();
+  }
+
+  clear(): void {
+    this.setDocument(emptyEditorDocument());
+  }
+
+  blur(): void {
+    (this.view?.dom as HTMLElement | undefined)?.blur();
+  }
+
+  undo(): void {
+    if (this.view) undo(this.view.state, this.view.dispatch);
+  }
+
+  redo(): void {
+    if (this.view) redo(this.view.state, this.view.dispatch);
+  }
+
+  insertText(text: string): void {
+    const view = this.view;
+    if (view) view.dispatch(view.state.tr.insertText(text));
+  }
+
+  insertNewline(): void {
+    const view = this.view;
+    if (view) splitBlock(view.state, view.dispatch);
+  }
+
+  insertInline(token: InlineToken, from?: number, to?: number): void {
+    const view = this.view;
+    const node = toProseMirrorInline(token);
+    if (!view || !node) return;
+    const start = from ?? view.state.selection.from;
+    const end = to ?? view.state.selection.to;
+    const transaction = view.state.tr.replaceWith(start, end, node);
+    transaction.setSelection(TextSelection.create(transaction.doc, start + node.nodeSize));
+    view.dispatch(transaction);
+  }
+
+  getAutocompleteQuery<TPrefix extends string>(
+    prefixes: readonly TPrefix[],
+    atDocumentStart = false
+  ): EditorAutocompleteQuery<TPrefix> | undefined {
+    const view = this.view;
+    if (!view || !view.state.selection.empty) return undefined;
+    const { $from, from } = view.state.selection;
+    const precedingText = view.state.doc.textBetween($from.start(), from, '\n', '\0');
+    const word = precedingText.match(/(?:^|\s)(\S*)$/)?.[1];
+    if (!word) return undefined;
+    const prefix = prefixes.find((candidate) => word.startsWith(candidate));
+    if (!prefix) return undefined;
+    const queryFrom = from - word.length;
+    if (
+      atDocumentStart &&
+      ($from.parent !== view.state.doc.firstChild ||
+        view.state.doc.textBetween(1, queryFrom, '\n', '\0').trim() !== '')
+    ) {
+      return undefined;
+    }
+    return { from: queryFrom, to: from, prefix, text: word.slice(prefix.length) };
+  }
+
+  applyMarkdownInline(marker: string): void {
+    const view = this.view;
+    if (!view) return;
+    const { from, to, empty } = view.state.selection;
+    const selectedText = empty ? '' : view.state.doc.textBetween(from, to, '\n', '\0');
+    const transaction = view.state.tr.insertText(`${marker}${selectedText}${marker}`, from, to);
+    transaction.setSelection(
+      TextSelection.create(transaction.doc, from + marker.length + selectedText.length)
+    );
+    view.dispatch(transaction);
+  }
+
+  applyMarkdownBlockPrefix(prefix: string): void {
+    const view = this.view;
+    if (view) view.dispatch(view.state.tr.insertText(prefix, view.state.selection.$from.start()));
+  }
+
+  subscribe(listener: (document: EditorDocument) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private notify(): void {
+    this.listeners.forEach((listener) => listener(this.getDocument()));
+  }
+}

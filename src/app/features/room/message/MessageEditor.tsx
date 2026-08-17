@@ -1,5 +1,5 @@
 import type { KeyboardEventHandler, MouseEventHandler, ReactNode } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useAtomValue } from 'jotai';
 import type { RectCords } from 'folds';
 import { Box, Chip, IconButton, OverlayBackdrop, Spinner, Text, as, config } from 'folds';
@@ -16,9 +16,9 @@ import type {
 import { MsgType } from '$types/matrix-sdk';
 import { isKeyHotkey } from 'is-hotkey';
 import type { EditorDocument } from '$components/editor/model';
-import type { EditorAutocompleteQuery } from '$components/editor/prosemirrorController';
 import {
   AutocompletePrefix,
+  useAutocompleteQuery,
   CustomEditor,
   EmoticonAutocomplete,
   MarkdownFormattingToolbarBottom,
@@ -115,8 +115,8 @@ export const MessageEditor = as<'div', MessageEditorProps>(
     const [pmpNoFallback] = useSetting(settingsAtom, 'pmpNoFallback');
     const isComposing = useComposingCheck();
 
-    const [autocompleteQuery, setAutocompleteQuery] =
-      useState<EditorAutocompleteQuery<AutocompletePrefix>>();
+    const [autocompleteQuery, setAutocompleteQuery, handleCloseAutocomplete] =
+      useAutocompleteQuery(editor);
 
     const getPrevBodyAndFormattedBody = useCallback((): [
       string | undefined,
@@ -321,7 +321,7 @@ export const MessageEditor = as<'div', MessageEditorProps>(
 
     const detectAutocomplete = useCallback(() => {
       setAutocompleteQuery(editor.getAutocompleteQuery(ANYWHERE_AUTOCOMPLETE_PREFIXES));
-    }, [editor]);
+    }, [editor, setAutocompleteQuery]);
 
     const handleKeyUp: KeyboardEventHandler = useCallback(
       (evt) => {
@@ -334,15 +334,6 @@ export const MessageEditor = as<'div', MessageEditorProps>(
       },
       [detectAutocomplete]
     );
-
-    const handleCloseAutocomplete = useCallback(() => {
-      setAutocompleteQuery((prev) => {
-        if (prev !== undefined) {
-          editor.focus();
-        }
-        return undefined;
-      });
-    }, [editor]);
 
     const handleEmoticonSelect = (key: string, shortcode: string) => {
       editor.insertInline(createEmoticonElement(key, shortcode));
@@ -462,6 +453,7 @@ export const MessageEditor = as<'div', MessageEditorProps>(
               htmlReactParserOptions={htmlReactParserOptions}
               hideCaption
               linkifyOpts={linkifyOpts}
+              room={room}
             />
           )}
           <Box

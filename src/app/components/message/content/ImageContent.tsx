@@ -44,6 +44,7 @@ import {
   addTauriMediaRetryRevision,
   getTauriMediaRetryTarget,
   getTauriMediaSourceUrl,
+  prepareLoopbackImageSource,
 } from '$utils/mediaUrl';
 import { setMediaEncryption } from '$utils/tauriMediaEncryption';
 import { isTauri } from '@tauri-apps/api/core';
@@ -225,8 +226,10 @@ export const ImageContent = as<'div', ImageContentProps>(
     }, [mx, url, useAuthentication, usesThumbnail, thumbWidth, thumbHeight]);
 
     const shouldResolveMedia = !deferMediaLoad || autoPlay || loadRequested;
+    const tauri = isTauri();
+    // Tauri resolves the source inside `loadSrc` instead.
     const resolvedMediaUrl = useRenderableMediaUrl(
-      encInfo || !shouldResolveMedia ? undefined : rawMediaUrl
+      encInfo || tauri || !shouldResolveMedia ? undefined : rawMediaUrl
     );
 
     const createObjectURL = useCreateObjectURL();
@@ -235,7 +238,7 @@ export const ImageContent = as<'div', ImageContentProps>(
       useCallback(async () => {
         if (encInfo) {
           if (!rawMediaUrl) throw new Error('Invalid media URL');
-          if (isTauri()) {
+          if (tauri) {
             // The registration key is the revised target; Rust strips the fragment.
             const attemptedTarget =
               getTauriMediaRetryTarget(rawMediaUrl, retryRevisionRef.current) ?? rawMediaUrl;
@@ -248,11 +251,12 @@ export const ImageContent = as<'div', ImageContentProps>(
             )
           );
         }
-        return addTauriMediaRetryRevision(
+        const source = addTauriMediaRetryRevision(
           resolvedMediaUrl ?? rawMediaUrl ?? url,
           retryRevisionRef.current
         );
-      }, [rawMediaUrl, resolvedMediaUrl, url, mimeType, encInfo, createObjectURL])
+        return tauri && rawMediaUrl ? prepareLoopbackImageSource(source) : source;
+      }, [rawMediaUrl, resolvedMediaUrl, tauri, url, mimeType, encInfo, createObjectURL])
     );
 
     useEffect(() => {

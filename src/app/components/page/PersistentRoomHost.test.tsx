@@ -113,6 +113,14 @@ describe('PersistentRoomHost', () => {
     );
   });
 
+  it('keeps a forum room on the timeline route when the timeline param asks for it', () => {
+    renderHost(`/home/${encodeURIComponent(FORUM_ROOM_ID)}/?timeline=true`);
+    expect(screen.getByTestId('room-timeline')).toBeInTheDocument();
+    expect(screen.getByTestId('pathname')).toHaveTextContent(
+      `/home/${encodeURIComponent(FORUM_ROOM_ID)}/`
+    );
+  });
+
   it('preloads the last visited room on a list route without redirecting', () => {
     renderHost('/home', { home: FORUM_ROOM_ID });
     expect(screen.getByTestId('room-timeline')).toBeInTheDocument();

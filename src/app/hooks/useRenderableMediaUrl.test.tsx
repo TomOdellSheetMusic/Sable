@@ -236,6 +236,22 @@ describe('useRenderableMediaUrl', () => {
     expect(tauriApi.convertFileSrc).not.toHaveBeenCalled();
   });
 
+  it('drops the previous loopback url when the media source goes away under Tauri', async () => {
+    tauriApi.isTauri.mockReturnValue(true);
+    const { useRenderableMediaUrl } = await import('./useRenderableMediaUrl');
+
+    const { result, rerender } = renderHook(
+      ({ url }: { url: string | undefined }) => useRenderableMediaUrl(url),
+      { initialProps: { url: 'https://example.org/banner.png' as string | undefined } }
+    );
+
+    await waitFor(() => expect(result.current).toBe(LOOPBACK_URL));
+
+    rerender({ url: undefined });
+
+    expect(result.current).toBeUndefined();
+  });
+
   it('passes through non-authenticated URLs unchanged under Tauri', async () => {
     tauriApi.isTauri.mockReturnValue(true);
     const { useRenderableMediaUrl } = await import('./useRenderableMediaUrl');
@@ -247,5 +263,37 @@ describe('useRenderableMediaUrl', () => {
       url: 'https://example.org/avatar.png',
     });
     expect(tauriApi.convertFileSrc).not.toHaveBeenCalled();
+  });
+
+  it('withholds the raw source under Tauri until the loopback url resolves', async () => {
+    tauriApi.isTauri.mockReturnValue(true);
+    let resolveLoopback: (url: string) => void = () => {};
+    tauriApi.invoke.mockReturnValue(
+      new Promise<string>((resolve) => {
+        resolveLoopback = resolve;
+      })
+    );
+    const { useRenderableMediaSource } = await import('./useRenderableMediaUrl');
+
+    const rawUrl =
+      'sable-media://https://matrix.example.org/_matrix/client/v1/media/thumbnail/example.org/abc123';
+    const { result } = renderHook(() => useRenderableMediaSource(rawUrl));
+
+    expect(result.current).toBeUndefined();
+
+    await act(async () => {
+      resolveLoopback(LOOPBACK_URL);
+    });
+    await waitFor(() => expect(result.current).toBe(LOOPBACK_URL));
+  });
+
+  it('falls back to the raw source outside Tauri while the blob resolves', async () => {
+    tauriApi.isTauri.mockReturnValue(false);
+    mediaTransport.fetchMediaBlob.mockReturnValue(new Promise<Blob>(() => {}));
+    const { useRenderableMediaSource } = await import('./useRenderableMediaUrl');
+
+    const { result } = renderHook(() => useRenderableMediaSource('https://example.org/avatar.png'));
+
+    expect(result.current).toBe('https://example.org/avatar.png');
   });
 });

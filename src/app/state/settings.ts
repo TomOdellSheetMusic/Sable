@@ -130,6 +130,7 @@ export interface Settings {
   editorEmojiButton: boolean;
   editorGifButton: boolean;
   editorStickerButton: boolean;
+  editorTriggerButtonsMigrated: boolean;
   editorButtonOrder: EditorButtonId[];
   composerToolbarOpen: boolean;
   alwaysInlineEditor: boolean;
@@ -316,8 +317,9 @@ export const defaultSettings: Settings = {
   editorOldAddFile: false,
   editorMicButton: true,
   editorEmojiButton: true,
-  editorGifButton: false,
-  editorStickerButton: false,
+  editorGifButton: true,
+  editorStickerButton: true,
+  editorTriggerButtonsMigrated: true,
   editorButtonOrder: [...EDITOR_BUTTON_ORDER_DEFAULT],
   composerToolbarOpen: false,
   alwaysInlineEditor: false,
@@ -521,6 +523,12 @@ function migrateParsedLocalStorage(parsed: Record<string, unknown>): void {
     parsed.saturationLevel = 100;
   }
   delete parsed.monochromeMode;
+
+  if (parsed.editorTriggerButtonsMigrated !== true) {
+    delete parsed.editorGifButton;
+    delete parsed.editorStickerButton;
+    parsed.editorTriggerButtonsMigrated = true;
+  }
 
   if (parsed.nameColorLightnessCorrectionMigrated !== true) {
     delete parsed.nameColorLightnessCorrection;

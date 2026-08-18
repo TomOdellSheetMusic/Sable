@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ForumView } from '$features/forum';
 import { Room } from '$features/room';
 import { useRoom } from '$hooks/useRoom';
@@ -11,6 +11,7 @@ import {
   getSpaceForumPath,
   getSpaceRoomPath,
 } from '$pages/pathUtils';
+import { ROOM_TIMELINE_SEARCH_PARAM } from '$pages/paths';
 import { CustomRoomType } from '$types/matrix/room';
 
 export type RoomRouteSection = 'home' | 'direct' | 'space';
@@ -34,7 +35,10 @@ export function RoomGate({
 }: RoomGateProps) {
   const room = useRoom();
   const navigate = useNavigate();
-  const isForum = room.getType() === CustomRoomType.Forum;
+  const [searchParams] = useSearchParams();
+  // Lets the developer tools open a forum room's timeline without being redirected back.
+  const timelineRequested = !forum && searchParams.get(ROOM_TIMELINE_SEARCH_PARAM) === 'true';
+  const isForum = room.getType() === CustomRoomType.Forum && !timelineRequested;
 
   useEffect(() => {
     if (isForum === forum) return;

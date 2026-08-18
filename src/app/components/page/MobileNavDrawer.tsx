@@ -214,6 +214,12 @@ export function MobileNavDrawer({ nav, rail, bottomNav, children }: MobileNavDra
   useLayoutEffect(() => {
     navPanelRef.current?.toggleAttribute('inert', panelIntent === 1);
     contentPanelRef.current?.toggleAttribute('inert', panelIntent === 0);
+    // `inert` alone does not drop a mobile keyboard.
+    const hiddenPanel = panelIntent === 0 ? contentPanelRef.current : navPanelRef.current;
+    const focused = document.activeElement;
+    if (hiddenPanel && focused instanceof HTMLElement && hiddenPanel.contains(focused)) {
+      focused.blur();
+    }
   }, [panelIntent]);
 
   useLayoutEffect(() => {

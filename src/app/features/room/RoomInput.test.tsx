@@ -28,6 +28,7 @@ import { roomScheduleCoordinator } from '$state/room/roomScheduleCoordinator';
 
 const testState = vi.hoisted(() => ({
   isMobile: false,
+  editorTriggerButtons: false,
   matrix: {
     sendMessage: vi.fn(),
     sendEvent: vi.fn(),
@@ -63,11 +64,11 @@ vi.mock('$state/hooks/settings', () => ({
   useSetting: (_atom: unknown, key: string) => {
     const values: Record<string, unknown> = {
       enterForNewline: false,
-      editorGifButton: false,
-      editorEmojiButton: false,
-      editorStickerButton: false,
+      editorGifButton: testState.editorTriggerButtons,
+      editorEmojiButton: testState.editorTriggerButtons,
+      editorStickerButton: testState.editorTriggerButtons,
       editorMicButton: false,
-      editorButtonOrder: [],
+      editorButtonOrder: testState.editorTriggerButtons ? ['gif', 'sticker', 'emoji'] : [],
       shortcutOverrides: {},
       hideActivity: true,
       mentionInReplies: true,
@@ -147,25 +148,29 @@ vi.mock('$components/editor', async () => {
     top,
     after,
     bottom,
-  }: any) => (
-    <div>
-      {top}
-      {before}
-      <div
-        data-editable-name={editableName}
-        data-testid={editableName === 'RoomInput' ? 'room-input-editor' : undefined}
-        data-editor-text={editableName === 'RoomInput' ? textOf(editor.children) : undefined}
-        contentEditable
-        role="textbox"
-        aria-label="Room message"
-        tabIndex={0}
-        onInput={onChange}
-        onKeyDown={onKeyDown}
-      />
-      {after}
-      {bottom}
-    </div>
-  );
+  }: any) => {
+    const [, setRevision] = useState(0);
+    useEffect(() => editor.subscribe(() => setRevision((value) => value + 1)), [editor]);
+    return (
+      <div>
+        {top}
+        {before}
+        <div
+          data-editable-name={editableName}
+          data-testid={editableName === 'RoomInput' ? 'room-input-editor' : undefined}
+          data-editor-text={editableName === 'RoomInput' ? textOf(editor.children) : undefined}
+          contentEditable
+          role="textbox"
+          aria-label="Room message"
+          tabIndex={0}
+          onInput={onChange}
+          onKeyDown={onKeyDown}
+        />
+        {after}
+        {bottom}
+      </div>
+    );
+  };
   return {
     AutocompletePrefix: {
       RoomMention: 'room-mention',
@@ -757,6 +762,7 @@ function deferred<T>() {
 
 beforeEach(() => {
   testState.isMobile = false;
+  testState.editorTriggerButtons = false;
   testState.pendingUploads = [];
   testState.sendIndividualAttachmentAsCaption = false;
   testState.encrypted = false;
@@ -919,7 +925,6 @@ describe('RoomInput submit regressions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Prepare two attachments' }));
     fireEvent.keyDown(screen.getByTestId('room-input-editor'), { key: 'Enter', code: 'Enter' });
 
-    // Clearing the composer remounts the editor subtree, so re-query the button.
     await waitFor(() => expect(testState.matrix.sendMessage).toHaveBeenCalledTimes(2));
     expect(sendButton()).toBeDisabled();
     fireEvent.click(sendButton());
@@ -1093,6 +1098,67 @@ describe('RoomInput submit regressions', () => {
     await waitFor(() =>
       expect(screen.getByTestId('room-input-editor')).toHaveAttribute('data-editor-text', '')
     );
+  });
+
+  it('keeps the composer focused after sending a text message', async () => {
+    render(<RoomInputHarness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Compose text' }));
+    screen.getByTestId('room-input-editor').focus();
+
+    fireEvent.keyDown(screen.getByTestId('room-input-editor'), { key: 'Enter', code: 'Enter' });
+
+    await waitFor(() => expect(testState.matrix.sendMessage).toHaveBeenCalledOnce());
+    expect(document.activeElement).toBe(screen.getByTestId('room-input-editor'));
+  });
+
+  it('clears the composer when a message is sent', async () => {
+    const clearSpy = vi.spyOn(ProseMirrorEditorController.prototype, 'clear');
+    try {
+      render(<RoomInputHarness />);
+      fireEvent.click(screen.getByRole('button', { name: 'Compose text' }));
+
+      fireEvent.click(sendButton());
+      await waitFor(() => expect(testState.matrix.sendMessage).toHaveBeenCalledOnce());
+
+      expect(clearSpy).toHaveBeenCalled();
+    } finally {
+      clearSpy.mockRestore();
+    }
+  });
+
+  it('keeps the composer focused when a reply is claimed by sending', async () => {
+    render(<RoomInputHarness initialReply />);
+    fireEvent.click(screen.getByRole('button', { name: 'Compose text' }));
+    screen.getByTestId('room-input-editor').focus();
+    fireEvent.keyDown(screen.getByTestId('room-input-editor'), { key: 'Enter', code: 'Enter' });
+
+    await waitFor(() => expect(testState.matrix.sendMessage).toHaveBeenCalledOnce());
+    expect(document.activeElement).toBe(screen.getByTestId('room-input-editor'));
+  });
+
+  it('keeps the composer focused when cancelling a reply on desktop', async () => {
+    render(<RoomInputHarness initialReply />);
+    screen.getByTestId('room-input-editor').focus();
+
+    fireEvent.keyDown(screen.getByTestId('room-input-editor'), { key: 'Escape', code: 'Escape' });
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+
+    expect(document.activeElement).toBe(screen.getByTestId('room-input-editor'));
+  });
+
+  it('blurs the composer when cancelling a reply on mobile to dismiss the keyboard', async () => {
+    testState.isMobile = true;
+    render(<RoomInputHarness initialReply />);
+    screen.getByTestId('room-input-editor').focus();
+
+    fireEvent.keyDown(screen.getByTestId('room-input-editor'), { key: 'Escape', code: 'Escape' });
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+
+    expect(document.activeElement).not.toBe(screen.getByTestId('room-input-editor'));
   });
 
   it('restores composed text when a scheduled send fails', async () => {
@@ -1329,6 +1395,64 @@ describe('RoomInput submit regressions', () => {
     expect(testState.matrix.sendMessage.mock.calls[0]?.[2]?.['m.relates_to']).toEqual(
       expect.objectContaining({ 'm.in_reply_to': expect.anything() })
     );
+  });
+
+  it('leaves only the emoji trigger once text is composed on mobile', () => {
+    testState.isMobile = true;
+    testState.editorTriggerButtons = true;
+    render(<RoomInputHarness />);
+
+    expect(screen.getByRole('button', { name: 'Open gif picker' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open sticker picker' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Compose text' }));
+
+    expect(screen.queryByRole('button', { name: 'Open gif picker' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open sticker picker' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open emoji board' })).toBeInTheDocument();
+  });
+
+  it('keeps every trigger while composing on desktop', () => {
+    testState.editorTriggerButtons = true;
+    render(<RoomInputHarness />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Compose text' }));
+
+    expect(screen.getByRole('button', { name: 'Open gif picker' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open sticker picker' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open emoji board' })).toBeInTheDocument();
+  });
+
+  it('keeps an unsent draft across a composer remount', async () => {
+    const input = render(<RoomInputHarness />);
+    render(<DraftObserver />);
+    fireEvent.click(screen.getByRole('button', { name: 'Compose text' }));
+
+    input.unmount();
+    expect(screen.getByTestId('draft-observer')).toHaveTextContent('retry me');
+
+    render(<RoomInputHarness />);
+
+    expect(screen.getByTestId('room-input-editor')).toHaveAttribute('data-editor-text', 'retry me');
+  });
+
+  it('drops the persisted draft when its message is sent', async () => {
+    const seed = render(<DraftSetter text="draft to send" />);
+    seed.unmount();
+    render(<RoomInputHarness initialDraft="draft to send" />);
+    render(<DraftObserver />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('room-input-editor')).toHaveAttribute(
+        'data-editor-text',
+        'draft to send'
+      )
+    );
+
+    fireEvent.keyDown(screen.getByTestId('room-input-editor'), { key: 'Enter', code: 'Enter' });
+
+    await waitFor(() => expect(testState.matrix.sendMessage).toHaveBeenCalledOnce());
+    expect(screen.getByTestId('draft-observer')).toBeEmptyDOMElement();
   });
 
   it('preserves the normal draft when an edited message input unmounts', async () => {

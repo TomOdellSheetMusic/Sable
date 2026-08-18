@@ -110,9 +110,12 @@ impl MediaSessionState {
     }
 
     fn set_session(&self, session: MediaSession) -> Result<(), String> {
-        self.session_store.set(session, || {
+        self.session_store.set(session, |changed| {
             self.forget_client_errors();
-            self.clear_loopback_media();
+            // Capabilities embed the access token, so only a real session change orphans them.
+            if changed {
+                self.clear_loopback_media();
+            }
         })
     }
 

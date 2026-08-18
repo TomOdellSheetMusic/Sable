@@ -183,20 +183,21 @@ export function useRenderableMediaUrl(url: string | undefined): string | undefin
   );
   const protocolUrl = tauri ? (rewriteAuthenticatedMediaUrl(url ?? null) ?? undefined) : undefined;
   // A settled entry resolves synchronously, so a repeated avatar never flashes a fallback.
-  const [loopbackUrl, setLoopbackUrl] = useState<string | undefined>(() =>
-    tauri && protocolUrl ? loopbackCache.get(protocolUrl)?.url : undefined
-  );
+  const [loopbackState, setLoopbackState] = useState<{ source?: string; url?: string }>(() => ({
+    source: protocolUrl,
+    url: tauri && protocolUrl ? loopbackCache.get(protocolUrl)?.url : undefined,
+  }));
 
   useEffect(() => {
     if (!tauri || !protocolUrl) return undefined;
     const entry = resolveLoopbackUrl(protocolUrl);
     if (entry.url) {
-      setLoopbackUrl(entry.url);
+      setLoopbackState({ source: protocolUrl, url: entry.url });
       return undefined;
     }
     let cancelled = false;
     void entry.promise.then((resolved) => {
-      if (!cancelled) setLoopbackUrl(resolved);
+      if (!cancelled) setLoopbackState({ source: protocolUrl, url: resolved });
     });
     return () => {
       cancelled = true;
@@ -270,7 +271,9 @@ export function useRenderableMediaUrl(url: string | undefined): string | undefin
   if (tauri) {
     // No protocolUrl fallback while resolving: resolveLoopbackUrl already degrades to it,
     // and handing out the custom-scheme URL first would fail a media element.
-    return loopbackUrl;
+    if (!protocolUrl) return undefined;
+    if (loopbackState.source === protocolUrl) return loopbackState.url;
+    return loopbackCache.get(protocolUrl)?.url;
   }
 
   if (!needsBlob || usesExistingObjectUrl) {
@@ -282,4 +285,12 @@ export function useRenderableMediaUrl(url: string | undefined): string | undefin
   }
 
   return resolvedState.url;
+}
+
+// Undefined while the url is still being prepared: on Tauri, rendering the raw source first
+// only means a second load once the loopback url lands, and an error on either latches.
+export function useRenderableMediaSource(url: string | undefined): string | undefined {
+  const resolvedUrl = useRenderableMediaUrl(url);
+  if (resolvedUrl) return resolvedUrl;
+  return isTauri() ? undefined : url;
 }

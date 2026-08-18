@@ -3,7 +3,7 @@ import type { ReactEventHandler, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import classNames from 'classnames';
 import colorMXID from '$utils/colorMXID';
-import { useRenderableMediaUrl } from '$hooks/useRenderableMediaUrl';
+import { useRenderableMediaSource } from '$hooks/useRenderableMediaUrl';
 import * as css from './UserAvatar.css';
 
 type UserAvatarProps = {
@@ -28,13 +28,13 @@ export function UserAvatar({
   renderFallback,
 }: UserAvatarProps) {
   const [error, setError] = useState(false);
-  const resolvedSrc = useRenderableMediaUrl(src);
+  const mediaSrc = useRenderableMediaSource(src);
 
   useEffect(() => {
     setError(false);
-  }, [src]);
+  }, [mediaSrc]);
 
-  if (!src || error) {
+  if (!mediaSrc || error) {
     return (
       <AvatarFallback
         style={{
@@ -51,7 +51,7 @@ export function UserAvatar({
   return (
     <AvatarImage
       className={classNames(css.UserAvatar, className)}
-      src={resolvedSrc ?? src}
+      src={mediaSrc}
       alt={alt}
       loading="lazy"
       decoding="async"

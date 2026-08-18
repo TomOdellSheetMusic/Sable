@@ -486,7 +486,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       };
     }, [draftKey]);
 
-    const [inputKey, setInputKey] = useState(0);
     const getUploadItemKey = useCallback((fileItem: TUploadItem): string => {
       const existingKey = uploadItemKeysRef.current.get(fileItem.originalFile);
       if (existingKey) return existingKey;
@@ -686,11 +685,13 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const [silentReply, setSilentReply] = useState(!mentionInReplies);
     // Clears the reply draft up front so it cannot be re-sent, keeping a snapshot to
     // restore if the send never lands.
+    const claimedReplyEventIdRef = useRef<string | undefined>();
     const claimReply = useCallback((): ReplyClaim | undefined => {
       const currentReply = replyDraftRef.current;
       if (!currentReply) return undefined;
 
       const epoch = draftEpochRef.current;
+      claimedReplyEventIdRef.current = currentReply.eventId;
       replyDraftRef.current = replyDraftBase;
       setReplyDraft(replyDraftBase);
       return { epoch, snapshot: structuredClone(currentReply), silentReply };
@@ -701,6 +702,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         if (replyDraftRef.current !== replyDraftBase) return;
         replyDraftRef.current = claim.snapshot;
         setReplyDraft(claim.snapshot);
+        claimedReplyEventIdRef.current = undefined;
       },
       [replyDraftBase, setReplyDraft]
     );
@@ -761,7 +763,12 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       });
     }, [threadRootId, setReplyDraft, mx]);
 
+    // Rewritten with equal content on unmount, and appending it again would duplicate it.
+    const appliedDraftRef = useRef<string>();
     useEffect(() => {
+      const draft = JSON.stringify(msgDraft);
+      if (appliedDraftRef.current === draft) return;
+      appliedDraftRef.current = draft;
       editor.appendDocument(msgDraft);
     }, [editor, msgDraft]);
 
@@ -949,7 +956,14 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
               // Ignore focus errors
             }
           });
-        } else if (!newId && prevId && prevId !== threadRootId && !editId) {
+        } else if (
+          !newId &&
+          prevId &&
+          prevId !== threadRootId &&
+          !editId &&
+          prevId !== claimedReplyEventIdRef.current
+        ) {
+          if (!isMobile) return;
           scheduleEditorRaf(() => {
             try {
               editor.blur();
@@ -960,7 +974,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
           });
         }
       }
-    }, [replyDraft?.eventId, threadRootId, editId, editor, scheduleEditorRaf]);
+    }, [replyDraft?.eventId, threadRootId, editId, isMobile, editor, scheduleEditorRaf]);
 
     const handleFileMetadata = useCallback(
       (fileItem: TUploadItem, metadata: TUploadMetadata) => {
@@ -1061,13 +1075,14 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         };
         if (clearEditor) {
           editor.clear();
-          setInputKey((prev) => prev + 1);
+          // The draft outlives this component, and a remount re-applies it.
+          setMsgDraft([]);
           imagePacksUsedRef.current.clear();
           sendTypingStatus(false);
         }
         return submission;
       },
-      [claimReply, editor, sendTypingStatus]
+      [claimReply, editor, sendTypingStatus, setMsgDraft]
     );
     const restoreSubmission = useCallback(
       (submission: Submission) => {
@@ -1981,7 +1996,6 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         <CustomEditor
           editableName="RoomInput"
           editor={editor}
-          key={inputKey}
           placeholder="Send a message..."
           enterKeyHint={enterForNewline ? 'enter' : 'send'}
           suppressBlurRefocusRef={suppressBlurRefocusRef}
@@ -2348,11 +2362,13 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                       requestClose={closeEmojiBoard}
                     />
                   );
+                  // Mobile has no room for three triggers next to text.
+                  const onlyEmojiTrigger = isMobile && hasText;
                   const triggers = (
                     <>
                       {editorButtonOrder.map((id) => {
                         let button: ReactElement | null = null;
-                        if (id === 'gif' && editorGifButton) {
+                        if (id === 'gif' && editorGifButton && !onlyEmojiTrigger) {
                           button = (
                             <IconButton
                               ref={gifBtnRef}
@@ -2371,7 +2387,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                               })}
                             </IconButton>
                           );
-                        } else if (id === 'sticker' && editorStickerButton) {
+                        } else if (id === 'sticker' && editorStickerButton && !onlyEmojiTrigger) {
                           button = (
                             <IconButton
                               ref={stickerBtnRef}
@@ -2500,7 +2516,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                       return;
                     }
                     if (sentOnPointerUpRef.current) return;
-                    submit();
+                    submit().catch((error) => log.error('submit failed', { roomId }, error));
                     return;
                   }
                   if (!editorMicButton) return;
@@ -2579,7 +2595,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                     return;
                   }
                   sentOnPointerUpRef.current = true;
-                  submit();
+                  submit().catch((error) => log.error('submit failed', { roomId }, error));
                 }}
                 onPointerCancel={() => {
                   if (longPressTimer.current !== null) {

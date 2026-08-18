@@ -12,6 +12,7 @@ import {
   getRoomStandaloneIconComponent,
 } from '$components/icons/roomIcons';
 import colorMXID from '$utils/colorMXID';
+import { useRenderableMediaSource } from '$hooks/useRenderableMediaUrl';
 import * as css from './RoomAvatar.css';
 import { AvatarImage } from './AvatarImage';
 
@@ -25,12 +26,13 @@ type RoomAvatarProps = {
 
 export function RoomAvatar({ roomId, src, alt, renderFallback, uniformIcons }: RoomAvatarProps) {
   const [error, setError] = useState(false);
+  const mediaSrc = useRenderableMediaSource(src);
 
   useEffect(() => {
     setError(false);
-  }, [src]);
+  }, [mediaSrc]);
 
-  if (!src || error) {
+  if (!mediaSrc || error) {
     return (
       <AvatarFallback
         style={{ backgroundColor: colorMXID(roomId ?? ''), color: color.Surface.Container }}
@@ -42,7 +44,12 @@ export function RoomAvatar({ roomId, src, alt, renderFallback, uniformIcons }: R
   }
 
   return (
-    <AvatarImage src={src} alt={alt} uniformIcons={uniformIcons} onError={() => setError(true)} />
+    <AvatarImage
+      src={mediaSrc}
+      alt={alt}
+      uniformIcons={uniformIcons}
+      onError={() => setError(true)}
+    />
   );
 }
 

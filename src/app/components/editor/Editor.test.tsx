@@ -57,6 +57,32 @@ describe('CustomEditor', () => {
     expect(container.querySelector('[aria-label="Write a message"]')).toBeTruthy();
     expect(container.querySelector('.ProseMirror')).toBeTruthy();
   });
+
+  it('keeps focus on the editable when the document is cleared', () => {
+    const { container, editor } = renderEditor();
+    const editable = container.querySelector('.ProseMirror') as HTMLElement;
+    editable.focus();
+
+    act(() => editor.insertText('some text'));
+    act(() => editor.clear());
+
+    expect(editor.isEmpty()).toBe(true);
+    expect(document.activeElement).toBe(editable);
+  });
+
+  it('notifies document-change consumers when cleared so autocomplete closes', () => {
+    const { editor } = renderEditor();
+    const changes: string[] = [];
+    editor.subscribe(() => changes.push(editor.getText()));
+
+    act(() => editor.insertText('hello'));
+    expect(editor.getAutocompleteQuery(['h', 'he'])).toBeDefined();
+
+    act(() => editor.clear());
+
+    expect(changes).toEqual(['hello', '']);
+    expect(editor.getAutocompleteQuery(['h', 'he'])).toBeUndefined();
+  });
 });
 
 describe('CustomEditor layout', () => {

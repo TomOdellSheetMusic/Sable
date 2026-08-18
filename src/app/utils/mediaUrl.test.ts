@@ -27,6 +27,7 @@ import {
   addTauriMediaRetryRevision,
   getTauriMediaSourceUrl,
   getTauriMediaRetryTarget,
+  prepareLoopbackImageSource,
   prepareLoopbackMedia,
   rewriteAuthenticatedMediaUrl,
 } from './mediaUrl';
@@ -271,6 +272,27 @@ describe('prepareLoopbackMedia', () => {
 
     await expect(prepareLoopbackMedia('sable-media://localhost/media')).rejects.toThrow(
       'loopback media server unavailable'
+    );
+  });
+});
+
+describe('prepareLoopbackImageSource', () => {
+  it('resolves the loopback URL under Tauri', async () => {
+    hoistedIsTauri.mockReturnValue(true);
+    hoistedInvoke.mockResolvedValue('http://127.0.0.1:45678/capability');
+
+    await expect(prepareLoopbackImageSource('sable-media://localhost/media')).resolves.toBe(
+      'http://127.0.0.1:45678/capability'
+    );
+  });
+
+  // Unlike a media element, an image renders from the custom scheme just fine.
+  it('degrades to the custom-scheme URL when the loopback fails', async () => {
+    hoistedIsTauri.mockReturnValue(true);
+    hoistedInvoke.mockRejectedValue(new Error('loopback media server unavailable'));
+
+    await expect(prepareLoopbackImageSource('sable-media://localhost/media')).resolves.toBe(
+      'sable-media://localhost/media'
     );
   });
 });

@@ -15,7 +15,13 @@ import { settingsAtom } from '$state/settings';
 import { markAsRead } from '$utils/notifications';
 import { copyToClipboard } from '$utils/dom';
 import { getCanonicalAliasOrRoomId, isRoomAlias } from '$utils/matrix';
-import { getHomeRoomPath, getDirectRoomPath, getSpaceRoomPath } from '$pages/pathUtils';
+import {
+  getHomeRoomPath,
+  getDirectRoomPath,
+  getSpaceRoomPath,
+  withSearchParam,
+} from '$pages/pathUtils';
+import { ROOM_TIMELINE_SEARCH_PARAM } from '$pages/paths';
 import { getMatrixToRoom } from '$plugins/matrix-to';
 import { getViaServers } from '$plugins/via-servers';
 import {
@@ -77,14 +83,16 @@ export const ForumMenu = forwardRef<HTMLDivElement, ForumMenuProps>(
 
     const handleOpenTimeline = () => {
       const roomIdOrAlias = getCanonicalAliasOrRoomId(mx, room.roomId);
+      let path: string;
       if (parentSpace) {
         const spaceIdOrAlias = getCanonicalAliasOrRoomId(mx, parentSpace.roomId);
-        navigate(getSpaceRoomPath(spaceIdOrAlias, roomIdOrAlias));
+        path = getSpaceRoomPath(spaceIdOrAlias, roomIdOrAlias);
       } else if (isDirectRoom) {
-        navigate(getDirectRoomPath(roomIdOrAlias));
+        path = getDirectRoomPath(roomIdOrAlias);
       } else {
-        navigate(getHomeRoomPath(roomIdOrAlias));
+        path = getHomeRoomPath(roomIdOrAlias);
       }
+      navigate(withSearchParam(path, { [ROOM_TIMELINE_SEARCH_PARAM]: 'true' }));
       requestClose();
     };
 

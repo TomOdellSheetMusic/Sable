@@ -115,6 +115,17 @@ export const prepareLoopbackMedia = async (source: string): Promise<string> => {
   return invoke<string>('prepare_loopback_media', { url: source });
 };
 
+// Awaited by the caller's own load so an element's src never changes mid-flight. An image
+// renders from the custom protocol too, so a loopback failure costs caching, not the image.
+export const prepareLoopbackImageSource = async (source: string): Promise<string> => {
+  if (!isTauri()) return source;
+  try {
+    return await prepareLoopbackMedia(source);
+  } catch {
+    return source;
+  }
+};
+
 export const mxcUrlToHttp = (
   mx: MatrixClient,
   mxcUrl: string,

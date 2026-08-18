@@ -4,7 +4,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { ImageContent } from './ImageContent';
 import { downloadEncryptedMedia, mxcUrlToHttp } from '$utils/matrix';
 
-const screenMocks = vi.hoisted(() => ({ isMobile: true, tauri: false }));
+const screenMocks = vi.hoisted(() => ({
+  isMobile: true,
+  tauri: false,
+  loopbackUrl: undefined as string | undefined,
+}));
 vi.mock('$hooks/useScreenSize', () => ({
   ScreenSize: { Desktop: 'Desktop', Tablet: 'Tablet', Mobile: 'Mobile' },
   useScreenSizeOptionally: () => (screenMocks.isMobile ? 'Mobile' : 'Desktop'),
@@ -13,6 +17,10 @@ vi.mock('$hooks/useScreenSize', () => ({
 
 vi.mock('@tauri-apps/api/core', () => ({
   isTauri: () => screenMocks.tauri,
+  invoke: async () => {
+    if (!screenMocks.loopbackUrl) throw new Error('loopback media server unavailable');
+    return screenMocks.loopbackUrl;
+  },
   // Real convertFileSrc percent-encodes the target into the URI path.
   convertFileSrc: (url: string, protocol: string) =>
     `${protocol}://localhost/${encodeURIComponent(url)}`,
@@ -198,6 +206,33 @@ describe('ImageContent', () => {
       });
     } finally {
       screenMocks.tauri = false;
+    }
+  });
+
+  it('loads a Tauri image once, from the loopback origin', async () => {
+    screenMocks.tauri = true;
+    screenMocks.loopbackUrl = 'http://127.0.0.1:45678/capability';
+    try {
+      const srcs: string[] = [];
+      render(
+        <ImageContent
+          url="mxc://example.org/abc123"
+          renderImage={(props) => {
+            srcs.push(props.src);
+            return <img alt="preview" src={props.src} onError={props.onError} />;
+          }}
+          renderViewer={() => <div>viewer</div>}
+        />
+      );
+
+      touchTap(screen.getByRole('button', { name: 'View' }));
+      await screen.findByAltText('preview');
+
+      await waitFor(() => expect(srcs.length).toBeGreaterThan(0));
+      expect(Array.from(new Set(srcs))).toEqual(['http://127.0.0.1:45678/capability']);
+    } finally {
+      screenMocks.tauri = false;
+      screenMocks.loopbackUrl = undefined;
     }
   });
 

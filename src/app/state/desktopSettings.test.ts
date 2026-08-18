@@ -104,29 +104,55 @@ describe('desktop settings state', () => {
   });
 
   it('migrates the legacy background-running flag into close behavior', () => {
-    expect(desktopSettingsFromStoreValues(false, false, true, undefined, undefined)).toEqual({
+    expect(
+      desktopSettingsFromStoreValues(false, false, true, undefined, undefined, undefined, undefined)
+    ).toEqual({
       closeToBackgroundOnClose: true,
       showSystemTrayIcon: false,
       useCustomTitleBar: true,
       spellcheck: true,
+      micHotkey: null,
+      deafenHotkey: null,
     });
   });
 
   it('preserves an explicit close-off setting when the legacy flag is off', () => {
-    expect(desktopSettingsFromStoreValues(false, true, false, undefined, undefined)).toEqual({
+    expect(
+      desktopSettingsFromStoreValues(false, true, false, undefined, undefined, undefined, undefined)
+    ).toEqual({
       closeToBackgroundOnClose: false,
       showSystemTrayIcon: true,
       useCustomTitleBar: true,
       spellcheck: true,
+      micHotkey: null,
+      deafenHotkey: null,
     });
   });
 
   it('preserves an explicit custom title bar value over platform defaults', () => {
     expect(
-      desktopSettingsFromStoreValues(undefined, undefined, undefined, false, undefined, 'windows')
+      desktopSettingsFromStoreValues(
+        undefined,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        undefined,
+        undefined,
+        'windows'
+      )
     ).toMatchObject({ useCustomTitleBar: false });
     expect(
-      desktopSettingsFromStoreValues(undefined, undefined, undefined, true, undefined, 'macos')
+      desktopSettingsFromStoreValues(
+        undefined,
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        undefined,
+        'macos'
+      )
     ).toMatchObject({
       useCustomTitleBar: true,
     });
@@ -151,6 +177,8 @@ describe('desktop settings state', () => {
       showSystemTrayIcon: true,
       useCustomTitleBar: true,
       spellcheck: true,
+      micHotkey: null,
+      deafenHotkey: null,
     });
 
     expect(mockSet).not.toHaveBeenCalled();
@@ -160,6 +188,8 @@ describe('desktop settings state', () => {
         showSystemTrayIcon: true,
         useCustomTitleBar: true,
         spellcheck: true,
+        micHotkey: null,
+        deafenHotkey: null,
       },
     });
     expect(store.get(desktopRuntimeStateAtom)).toEqual({ trayAvailable: false });
@@ -187,6 +217,8 @@ describe('desktop settings state', () => {
       showSystemTrayIcon: true,
       useCustomTitleBar: true,
       spellcheck: true,
+      micHotkey: null,
+      deafenHotkey: null,
     });
 
     await vi.waitFor(() => {
@@ -208,6 +240,8 @@ describe('desktop settings state', () => {
         showSystemTrayIcon: false,
         useCustomTitleBar: false,
         spellcheck: false,
+        micHotkey: null,
+        deafenHotkey: null,
       })
     ).resolves.toEqual({ trayAvailable: false });
 
@@ -223,6 +257,8 @@ describe('desktop settings state', () => {
         showSystemTrayIcon: false,
         useCustomTitleBar: false,
         spellcheck: false,
+        micHotkey: null,
+        deafenHotkey: null,
       },
     });
   });
@@ -246,6 +282,8 @@ describe('desktop settings state', () => {
         showSystemTrayIcon: false,
         useCustomTitleBar: true,
         spellcheck: true,
+        micHotkey: null,
+        deafenHotkey: null,
       },
     });
   });
@@ -269,6 +307,8 @@ describe('desktop settings state', () => {
         showSystemTrayIcon: true,
         useCustomTitleBar: true,
         spellcheck: true,
+        micHotkey: null,
+        deafenHotkey: null,
       },
     });
   });
@@ -292,6 +332,8 @@ describe('desktop settings state', () => {
         showSystemTrayIcon: false,
         useCustomTitleBar: true,
         spellcheck: true,
+        micHotkey: null,
+        deafenHotkey: null,
       },
     });
   });

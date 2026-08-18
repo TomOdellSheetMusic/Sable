@@ -541,6 +541,8 @@ mod tests {
             show_system_tray_icon: true,
             use_custom_title_bar: false,
             spellcheck: true,
+            mic_hotkey: None,
+            deafen_hotkey: None,
         };
         let _ = crate::desktop::runtime_state::DesktopRuntimeState {
             tray_available: true,

@@ -294,6 +294,54 @@ export const captureShortcut = (event: ShortcutEvent): string | undefined => {
   return [...modifiers, key].join('+');
 };
 
+/**
+ * Converts a captured shortcut (e.g. `mod+shift+m`) into a Tauri accelerator
+ * string (e.g. `CmdOrCtrl+Shift+M`) suitable for `tauri-plugin-global-shortcut`.
+ */
+export const toAccelerator = (captured: string): string => {
+  const parts = captured.split('+');
+  const key = parts.at(-1)!;
+  const modifiers = parts.slice(0, -1);
+  const accelMods = modifiers.map((mod) => {
+    switch (mod) {
+      case 'mod':
+      case 'meta':
+      case 'control':
+        return 'CmdOrCtrl';
+      case 'alt':
+        return 'Alt';
+      case 'shift':
+        return 'Shift';
+      default:
+        return mod;
+    }
+  });
+  const accelKey = key === 'space' ? 'Space' : key.charAt(0).toUpperCase() + key.slice(1);
+  return [...accelMods, accelKey].join('+');
+};
+
+/**
+ * Converts a Tauri accelerator string (e.g. `CmdOrCtrl+Shift+M`) back into the
+ * captured format (e.g. `mod+shift+m`). Returns `null` if it cannot be parsed.
+ */
+export const fromAccelerator = (accelerator: string | null): string | null => {
+  if (accelerator === null) return null;
+  const parts = accelerator.split('+');
+  const key = parts.at(-1);
+  if (!key) return null;
+  const modifiers = parts.slice(0, -1);
+  const capturedMods = modifiers.map((mod) => {
+    const lower = mod.toLowerCase();
+    if (lower === 'cmdorctrl' || lower === 'ctrl' || lower === 'cmd' || lower === 'super')
+      return 'mod';
+    if (lower === 'alt') return 'alt';
+    if (lower === 'shift') return 'shift';
+    return mod;
+  });
+  const capturedKey = key.toLowerCase() === 'space' ? 'space' : key.toLowerCase();
+  return [...capturedMods, capturedKey].join('+');
+};
+
 export const findShortcutConflict = (
   id: ShortcutId,
   binding: string,

@@ -30,6 +30,8 @@ export function desktopSettingsDefaultsForPlatform(platform: DesktopPlatform): D
     showSystemTrayIcon: true,
     useCustomTitleBar: platform === 'windows',
     spellcheck: true,
+    micHotkey: null,
+    deafenHotkey: null,
   };
 }
 export type DesktopSettingKey = keyof DesktopSettings;
@@ -71,12 +73,18 @@ async function persistDesktopSettings(
   await Promise.all(updates);
 }
 
+function readString(value: string | undefined, fallback: string | null): string | null {
+  return value === undefined ? fallback : value;
+}
+
 export function desktopSettingsFromStoreValues(
   closeToBackgroundOnClose: boolean | undefined,
   showSystemTrayIcon: boolean | undefined,
   legacyKeepBackgroundRunning: boolean | undefined,
   useCustomTitleBar: boolean | undefined,
   spellcheck: boolean | undefined,
+  micHotkey: string | undefined,
+  deafenHotkey: string | undefined,
   platform = getDesktopTauriPlatform()
 ): DesktopSettings {
   const defaults = desktopSettingsDefaultsForPlatform(platform);
@@ -88,6 +96,8 @@ export function desktopSettingsFromStoreValues(
     showSystemTrayIcon: readBoolean(showSystemTrayIcon, defaults.showSystemTrayIcon),
     useCustomTitleBar: readBoolean(useCustomTitleBar, defaults.useCustomTitleBar),
     spellcheck: readBoolean(spellcheck, defaults.spellcheck),
+    micHotkey: readString(micHotkey, defaults.micHotkey),
+    deafenHotkey: readString(deafenHotkey, defaults.deafenHotkey),
   };
 }
 
@@ -117,12 +127,16 @@ export async function getDesktopSettings(): Promise<DesktopSettings> {
     legacyKeepBackgroundRunning,
     useCustomTitleBar,
     spellcheck,
+    micHotkey,
+    deafenHotkey,
   ] = await Promise.all([
     desktopSettingsStore.get<boolean>('closeToBackgroundOnClose'),
     desktopSettingsStore.get<boolean>('showSystemTrayIcon'),
     desktopSettingsStore.get<boolean>(LEGACY_KEEP_BACKGROUND_RUNNING_KEY),
     desktopSettingsStore.get<boolean>('useCustomTitleBar'),
     desktopSettingsStore.get<boolean>('spellcheck'),
+    desktopSettingsStore.get<string>('micHotkey'),
+    desktopSettingsStore.get<string>('deafenHotkey'),
   ]);
 
   currentDesktopSettings = desktopSettingsFromStoreValues(
@@ -130,7 +144,9 @@ export async function getDesktopSettings(): Promise<DesktopSettings> {
     showSystemTrayIcon,
     legacyKeepBackgroundRunning,
     useCustomTitleBar,
-    spellcheck
+    spellcheck,
+    micHotkey,
+    deafenHotkey
   );
 
   return currentDesktopSettings;

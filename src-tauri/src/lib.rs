@@ -540,6 +540,7 @@ mod tests {
             close_to_background_on_close: true,
             show_system_tray_icon: true,
             use_custom_title_bar: false,
+            spellcheck: true,
         };
         let _ = crate::desktop::runtime_state::DesktopRuntimeState {
             tray_available: true,

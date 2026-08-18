@@ -54,7 +54,7 @@ export type RoomSearchParams = {
   viaServers?: string;
 };
 export const ROOM_PATH_SEGMENT = ':roomIdOrAlias/:eventId?/';
-export const ROOM_FORUM_PATH_SEGMENT = ':roomIdOrAlias/forum/';
+export const ROOM_FORUM_PATH_SEGMENT = ':roomIdOrAlias/forum/:eventId?/';
 
 export const HOME_PATH = '/home/';
 export const HOME_JOIN_PATH = `/home/${JOIN_PATH_SEGMENT}`;

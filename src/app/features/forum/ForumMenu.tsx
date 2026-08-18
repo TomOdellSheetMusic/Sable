@@ -23,10 +23,12 @@ import {
   GearSix,
   Link,
   menuIcon,
+  SignOut,
   Terminal,
   UserCircle,
   UserPlus,
 } from '$components/icons/phosphor';
+import { useRoomMenuActions } from '$hooks/useRoomMenuActions';
 import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
 import { RoomSettingsPage } from '$state/roomSettings';
 
@@ -48,6 +50,7 @@ export const ForumMenu = forwardRef<HTMLDivElement, ForumMenuProps>(
     const navigate = useNavigate();
     const parentSpace = useSpaceOptionally();
     const isDirectRoom = useIsDirectRoom();
+    const { handleLeaveRoom } = useRoomMenuActions(room);
 
     const [invitePrompt, setInvitePrompt] = useState(false);
 
@@ -156,6 +159,23 @@ export const ForumMenu = forwardRef<HTMLDivElement, ForumMenuProps>(
               </Text>
             </MenuItem>
           )}
+        </Box>
+        <Line variant="Surface" size="300" />
+        <Box direction="Column" gap="100" style={{ padding: config.space.S100 }}>
+          <MenuItem
+            onClick={async () => {
+              if (await handleLeaveRoom()) requestClose();
+            }}
+            variant="Critical"
+            fill="None"
+            size="300"
+            after={menuIcon(SignOut)}
+            radii="300"
+          >
+            <Text style={{ flexGrow: 1 }} as="span" size="T300" truncate>
+              Leave Room
+            </Text>
+          </MenuItem>
         </Box>
       </Menu>
     );

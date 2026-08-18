@@ -3,7 +3,14 @@ import { useCallback } from 'react';
 import { useSetAtom } from 'jotai';
 import { matchPath, useLocation, useNavigate } from 'react-router-dom';
 import { resolveSection } from '$pages/pathUtils';
-import { HOME_ROOM_PATH, DIRECT_ROOM_PATH, SPACE_ROOM_PATH } from '$pages/paths';
+import {
+  DIRECT_ROOM_FORUM_PATH,
+  DIRECT_ROOM_PATH,
+  HOME_ROOM_FORUM_PATH,
+  HOME_ROOM_PATH,
+  SPACE_ROOM_FORUM_PATH,
+  SPACE_ROOM_PATH,
+} from '$pages/paths';
 import { lastVisitedRoomAtom } from '$state/room/lastRoom';
 import { isRoomAlias, isRoomId } from '$utils/matrix';
 import { useAndroidBackHandler } from '$utils/androidBack';
@@ -21,7 +28,14 @@ export function useBackRoute(): () => void {
     const section = resolveSection(location.pathname);
     if (!section) return;
 
-    const roomPaths = [HOME_ROOM_PATH, DIRECT_ROOM_PATH, SPACE_ROOM_PATH];
+    const roomPaths = [
+      HOME_ROOM_FORUM_PATH,
+      DIRECT_ROOM_FORUM_PATH,
+      SPACE_ROOM_FORUM_PATH,
+      HOME_ROOM_PATH,
+      DIRECT_ROOM_PATH,
+      SPACE_ROOM_PATH,
+    ];
     const roomMatch = roomPaths
       .map((path) => matchPath({ path, end: false }, location.pathname))
       .find((match) => match !== null);

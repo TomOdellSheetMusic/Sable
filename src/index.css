@@ -63,7 +63,8 @@ body {
     html,
     body,
     #root {
-      height: var(--sable-ios-pwa-viewport-height, 100dvh);
+      /* 100vh is the only unit that includes the safe-area insets in installed PWAs */
+      height: var(--sable-ios-pwa-viewport-height, 100vh);
     }
   }
 }

@@ -445,6 +445,10 @@ function EditorButtonOrderRow({
 function Editor() {
   const [enterForNewline, setEnterForNewline] = useSetting(settingsAtom, 'enterForNewline');
   const [editorToolbar, setEditorToolbar] = useSetting(settingsAtom, 'editorToolbar');
+  const [alwaysInlineEditor, setAlwaysInlineEditor] = useSetting(
+    settingsAtom,
+    'alwaysInlineEditor'
+  );
   const [editorOldAddFile, setEditorOldAddFile] = useSetting(settingsAtom, 'editorOldAddFile');
   const [editorMicButton, setEditorMicButton] = useSetting(settingsAtom, 'editorMicButton');
   const [editorEmojiButton, setEditorEmojiButton] = useSetting(settingsAtom, 'editorEmojiButton');
@@ -534,6 +538,13 @@ function Editor() {
         description="Show the sticker button inline with the message composer."
         value={editorStickerButton}
         onChange={setEditorStickerButton}
+      />
+      <SettingToggle
+        title="Always Inline Editor"
+        focusId="always-inline-editor"
+        description="Always keep the last line of the text editor inline with UI buttons."
+        value={alwaysInlineEditor}
+        onChange={setAlwaysInlineEditor}
       />
       <SequenceCard className={SequenceCardStyle} variant="SurfaceVariant" direction="Column">
         <SettingTile

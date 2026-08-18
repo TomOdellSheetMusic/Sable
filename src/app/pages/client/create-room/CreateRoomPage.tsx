@@ -13,7 +13,9 @@ export function CreateRoomPage() {
   const spaceId = searchParams.get('spaceId') ?? undefined;
   const typeParam = searchParams.get('type');
   const type =
-    typeParam === CreateRoomType.TextRoom || typeParam === CreateRoomType.VoiceRoom
+    typeParam === CreateRoomType.TextRoom ||
+    typeParam === CreateRoomType.VoiceRoom ||
+    typeParam === CreateRoomType.ForumRoom
       ? typeParam
       : undefined;
 

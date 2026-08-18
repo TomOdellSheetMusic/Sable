@@ -12,18 +12,9 @@ import { useAtomValue, useSetAtom } from 'jotai';
 import { matchPath, useLocation, useNavigate } from 'react-router-dom';
 import { lastVisitedRoomAtom } from '$state/room/lastRoom';
 import { usePrefersReducedMotion } from '$hooks/usePrefersReducedMotion';
-import {
-  DIRECT_PATH,
-  DIRECT_ROOM_PATH,
-  EXPLORE_PATH,
-  HOME_PATH,
-  HOME_ROOM_PATH,
-  INBOX_PATH,
-  SPACE_PATH,
-  SPACE_ROOM_PATH,
-} from '$pages/paths';
+import { DIRECT_PATH, EXPLORE_PATH, HOME_PATH, INBOX_PATH, SPACE_PATH } from '$pages/paths';
 import { resolveSection } from '$pages/pathUtils';
-import { isRoomAlias, isRoomId } from '$utils/matrix';
+import { matchRoomRoute } from '$pages/roomRouteMatch';
 import { PersistentRoomHost } from './PersistentRoomHost';
 import { MobileNavDrawerContext, type MobileSwipeTarget } from './MobileNavDrawerContext';
 import {
@@ -66,16 +57,9 @@ export function MobileNavDrawer({ nav, rail, bottomNav, children }: MobileNavDra
     openableSection && openableSection.getRoomPath && lastRoom?.[openableSection.key]
   );
 
-  const roomMatch =
-    matchPath({ path: HOME_ROOM_PATH, end: false }, location.pathname) ??
-    matchPath({ path: DIRECT_ROOM_PATH, end: false }, location.pathname) ??
-    matchPath({ path: SPACE_ROOM_PATH, end: false }, location.pathname);
-  const matchedRoomId = roomMatch?.params.roomIdOrAlias
-    ? decodeURIComponent(roomMatch.params.roomIdOrAlias)
-    : undefined;
-  // `:roomIdOrAlias` also matches non-room segments like `create`, `search`, and `lobby`.
-  // Only treat it as a room when it is a real Matrix ID or alias.
-  const isRoomRoute = !!matchedRoomId && (isRoomId(matchedRoomId) || isRoomAlias(matchedRoomId));
+  const roomRoute = matchRoomRoute(location.pathname);
+  const matchedRoomId = roomRoute?.roomIdOrAlias;
+  const isRoomRoute = roomRoute !== undefined;
 
   const listView =
     matchPath({ path: HOME_PATH, end: true }, location.pathname) !== null ||

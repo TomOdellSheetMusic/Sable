@@ -111,8 +111,8 @@ export const getHomeRoomPath = (roomIdOrAlias: string, eventId?: string): string
   return generatePath(HOME_ROOM_PATH, params);
 };
 
-export const getHomeForumPath = (roomIdOrAlias: string): string =>
-  generatePath(HOME_ROOM_FORUM_PATH, { roomIdOrAlias });
+export const getHomeForumPath = (roomIdOrAlias: string, eventId?: string): string =>
+  generatePath(HOME_ROOM_FORUM_PATH, { roomIdOrAlias, eventId: eventId ?? null });
 
 export const getDirectPath = (): string => DIRECT_PATH;
 export const getDirectCreatePath = (): string => DIRECT_CREATE_PATH;
@@ -125,8 +125,8 @@ export const getDirectRoomPath = (roomIdOrAlias: string, eventId?: string): stri
   return generatePath(DIRECT_ROOM_PATH, params);
 };
 
-export const getDirectForumPath = (roomIdOrAlias: string): string =>
-  generatePath(DIRECT_ROOM_FORUM_PATH, { roomIdOrAlias });
+export const getDirectForumPath = (roomIdOrAlias: string, eventId?: string): string =>
+  generatePath(DIRECT_ROOM_FORUM_PATH, { roomIdOrAlias, eventId: eventId ?? null });
 
 export const getSpacePath = (spaceIdOrAlias: string): string => {
   const params = {
@@ -160,10 +160,15 @@ export const getSpaceRoomPath = (
 
   return generatePath(SPACE_ROOM_PATH, params);
 };
-export const getSpaceForumPath = (spaceIdOrAlias: string, roomIdOrAlias: string): string =>
+export const getSpaceForumPath = (
+  spaceIdOrAlias: string,
+  roomIdOrAlias: string,
+  eventId?: string
+): string =>
   generatePath(SPACE_ROOM_FORUM_PATH, {
     spaceIdOrAlias,
     roomIdOrAlias,
+    eventId: eventId ?? null,
   });
 
 export const getExplorePath = (): string => EXPLORE_PATH;
@@ -178,8 +183,13 @@ export const getExploreServerPath = (server: string): string => {
 export const getCreatePath = (): string => CREATE_PATH;
 export const getCreateSpacePath = (spaceId?: string): string =>
   spaceId ? withSearchParam(CREATE_PATH, { spaceId }) : CREATE_PATH;
-export const getCreateRoomPath = (spaceId?: string): string =>
-  spaceId ? withSearchParam(CREATE_ROOM_PATH, { spaceId }) : CREATE_ROOM_PATH;
+export const getCreateRoomPath = (spaceId?: string, type?: string): string => {
+  const params: Record<string, string> = {};
+  if (spaceId) params.spaceId = spaceId;
+  if (type) params.type = type;
+
+  return Object.keys(params).length ? withSearchParam(CREATE_ROOM_PATH, params) : CREATE_ROOM_PATH;
+};
 export const getBugReportPath = (): string => BUG_REPORT_PATH;
 export const getNavigatePath = (): string => NAVIGATE_PATH;
 export const getProfilePath = (): string => PROFILE_PATH;
@@ -205,17 +215,19 @@ export type SectionNav = {
  */
 export const resolveSection = (pathname: string): SectionNav | null => {
   if (matchPath({ path: HOME_PATH, end: false }, pathname)) {
+    const isForum = matchPath({ path: HOME_ROOM_FORUM_PATH, end: false }, pathname) !== null;
     return {
       key: 'home',
       listPath: getHomePath(),
-      getRoomPath: getHomeRoomPath,
+      getRoomPath: isForum ? getHomeForumPath : getHomeRoomPath,
     };
   }
   if (matchPath({ path: DIRECT_PATH, end: false }, pathname)) {
+    const isForum = matchPath({ path: DIRECT_ROOM_FORUM_PATH, end: false }, pathname) !== null;
     return {
       key: 'direct',
       listPath: getDirectPath(),
-      getRoomPath: getDirectRoomPath,
+      getRoomPath: isForum ? getDirectForumPath : getDirectRoomPath,
     };
   }
   if (matchPath({ path: EXPLORE_PATH, end: false }, pathname)) {
@@ -228,10 +240,13 @@ export const resolveSection = (pathname: string): SectionNav | null => {
   const encodedSpaceId = spaceMatch?.params.spaceIdOrAlias;
   if (encodedSpaceId) {
     const spaceId = decodeURIComponent(encodedSpaceId);
+    const isForum = matchPath({ path: SPACE_ROOM_FORUM_PATH, end: false }, pathname) !== null;
     return {
       key: `space:${spaceId}`,
       listPath: getSpacePath(spaceId),
-      getRoomPath: (roomIdOrAlias) => getSpaceRoomPath(spaceId, roomIdOrAlias),
+      getRoomPath: isForum
+        ? (roomIdOrAlias) => getSpaceForumPath(spaceId, roomIdOrAlias)
+        : (roomIdOrAlias) => getSpaceRoomPath(spaceId, roomIdOrAlias),
     };
   }
   return null;

@@ -193,11 +193,10 @@ mod tests {
 
     #[test]
     fn missing_spellcheck_setting_defaults_to_enabled() {
+        assert!(desktop_settings_from_values(None, None, None, None, None, None, None).spellcheck);
         assert!(
-            desktop_settings_from_values(None, None, None, None, None, None, None).spellcheck
-        );
-        assert!(
-            !desktop_settings_from_values(None, None, None, Some(false), None, None, None).spellcheck
+            !desktop_settings_from_values(None, None, None, Some(false), None, None, None)
+                .spellcheck
         );
     }
 }

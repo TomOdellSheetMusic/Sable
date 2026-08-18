@@ -78,7 +78,10 @@ pub fn global_shortcut_plugin() -> tauri::plugin::TauriPlugin<crate::BrowserEngi
             }
 
             let settings = crate::desktop::tray::current_desktop_settings(app);
-            let mic_hotkey = settings.mic_hotkey.as_deref().unwrap_or(DEFAULT_MIC_ACCELERATOR);
+            let mic_hotkey = settings
+                .mic_hotkey
+                .as_deref()
+                .unwrap_or(DEFAULT_MIC_ACCELERATOR);
             let deafen_hotkey = settings
                 .deafen_hotkey
                 .as_deref()
@@ -101,7 +104,10 @@ pub fn register_global_shortcuts(app: &AppHandle<crate::BrowserEngine>) {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
     let settings = crate::desktop::tray::current_desktop_settings(app);
-    let mic_hotkey = settings.mic_hotkey.as_deref().unwrap_or(DEFAULT_MIC_ACCELERATOR);
+    let mic_hotkey = settings
+        .mic_hotkey
+        .as_deref()
+        .unwrap_or(DEFAULT_MIC_ACCELERATOR);
     let deafen_hotkey = settings
         .deafen_hotkey
         .as_deref()
@@ -128,10 +134,22 @@ pub fn apply_call_shortcuts(
 ) {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
-    let prev_mic = prev.mic_hotkey.as_deref().unwrap_or(DEFAULT_MIC_ACCELERATOR);
-    let prev_deafen = prev.deafen_hotkey.as_deref().unwrap_or(DEFAULT_DEAFEN_ACCELERATOR);
-    let next_mic = settings.mic_hotkey.as_deref().unwrap_or(DEFAULT_MIC_ACCELERATOR);
-    let next_deafen = settings.deafen_hotkey.as_deref().unwrap_or(DEFAULT_DEAFEN_ACCELERATOR);
+    let prev_mic = prev
+        .mic_hotkey
+        .as_deref()
+        .unwrap_or(DEFAULT_MIC_ACCELERATOR);
+    let prev_deafen = prev
+        .deafen_hotkey
+        .as_deref()
+        .unwrap_or(DEFAULT_DEAFEN_ACCELERATOR);
+    let next_mic = settings
+        .mic_hotkey
+        .as_deref()
+        .unwrap_or(DEFAULT_MIC_ACCELERATOR);
+    let next_deafen = settings
+        .deafen_hotkey
+        .as_deref()
+        .unwrap_or(DEFAULT_DEAFEN_ACCELERATOR);
 
     let gs = app.global_shortcut();
 

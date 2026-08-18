@@ -1,4 +1,4 @@
-#[cfg(target_os = "macos")]
+#[cfg(desktop)]
 use tauri::Emitter;
 use tauri::{AppHandle, Manager};
 
@@ -6,6 +6,13 @@ use tauri::{AppHandle, Manager};
 pub const SETTINGS_MENU_ID: &str = "settings";
 
 pub const TOGGLE_WINDOW_ACCELERATOR: &str = "CmdOrCtrl+Shift+S";
+pub const TOGGLE_MIC_ACCELERATOR: &str = "CmdOrCtrl+Shift+M";
+pub const TOGGLE_DEAFEN_ACCELERATOR: &str = "CmdOrCtrl+Shift+D";
+
+/// Emitted to the webview when the global mute-microphone hotkey is pressed.
+pub const TOGGLE_MIC_EVENT: &str = "call-toggle-mic";
+/// Emitted to the webview when the global deafen (mute everything) hotkey is pressed.
+pub const TOGGLE_DEAFEN_EVENT: &str = "call-toggle-deafen";
 
 // Extend the standard menu (Edit submenu for webview copy/paste, Quit, Close)
 // with a Settings item.
@@ -52,13 +59,43 @@ pub fn toggle_main_window(app: &AppHandle<crate::BrowserEngine>) {
 }
 
 pub fn global_shortcut_plugin() -> tauri::plugin::TauriPlugin<crate::BrowserEngine> {
-    use tauri_plugin_global_shortcut::{Builder, ShortcutState};
+    use tauri_plugin_global_shortcut::{Builder, Code, Modifiers, Shortcut, ShortcutState};
+
+    // Cmd/Ctrl is the platform-appropriate modifier for these shortcuts.
+    #[cfg(target_os = "macos")]
+    let primary_modifier = Modifiers::SUPER;
+    #[cfg(not(target_os = "macos"))]
+    let primary_modifier = Modifiers::CONTROL;
 
     Builder::new()
-        .with_handler(|app, _shortcut, event| {
-            if event.state() == ShortcutState::Pressed {
-                toggle_main_window(app);
+        .with_handler(move |app, shortcut, event| {
+            if event.state() != ShortcutState::Pressed {
+                return;
             }
+
+            let event_name = match *shortcut {
+                Shortcut {
+                    mods: m,
+                    key: Code::KeyM,
+                    ..
+                } if m.contains(primary_modifier) && m.contains(Modifiers::SHIFT) => {
+                    TOGGLE_MIC_EVENT
+                }
+                Shortcut {
+                    mods: m,
+                    key: Code::KeyD,
+                    ..
+                } if m.contains(primary_modifier) && m.contains(Modifiers::SHIFT) => {
+                    TOGGLE_DEAFEN_EVENT
+                }
+                _ => {
+                    // Existing behavior: CmdOrCtrl+Shift+S shows/hides the window.
+                    toggle_main_window(app);
+                    return;
+                }
+            };
+
+            let _ = app.emit(event_name, ());
         })
         .build()
 }
@@ -66,7 +103,13 @@ pub fn global_shortcut_plugin() -> tauri::plugin::TauriPlugin<crate::BrowserEngi
 pub fn register_global_shortcuts(app: &AppHandle<crate::BrowserEngine>) {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
-    if let Err(error) = app.global_shortcut().register(TOGGLE_WINDOW_ACCELERATOR) {
-        log::warn!("Failed to register global show/hide shortcut: {error}");
+    for (name, accelerator) in [
+        ("show/hide window", TOGGLE_WINDOW_ACCELERATOR),
+        ("mute microphone", TOGGLE_MIC_ACCELERATOR),
+        ("deafen", TOGGLE_DEAFEN_ACCELERATOR),
+    ] {
+        if let Err(error) = app.global_shortcut().register(accelerator) {
+            log::warn!("Failed to register global {name} shortcut: {error}");
+        }
     }
 }

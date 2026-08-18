@@ -2,10 +2,12 @@ import { useEffect } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { type as osType } from '@tauri-apps/plugin-os';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { listen } from '@tauri-apps/api/event';
 import { exit } from '@tauri-apps/plugin-process';
+import { useStore } from 'jotai';
 import { useOpenSettings } from '$features/settings';
 import { createLogger } from '$utils/debug';
+import { callEmbedAtom } from '$state/callEmbed';
+import { onCallToggleDeafen, onCallToggleMic, onOpenSettings } from '$generated/tauri/events';
 
 const log = createLogger('DesktopShortcuts');
 
@@ -13,6 +15,7 @@ const log = createLogger('DesktopShortcuts');
 // Windows/Linux have no menubar, so they are wired to Ctrl-key shortcuts here.
 export function DesktopShortcuts() {
   const openSettings = useOpenSettings();
+  const store = useStore();
 
   useEffect(() => {
     if (!isTauri()) return undefined;
@@ -21,13 +24,35 @@ export function DesktopShortcuts() {
 
     const cleanups: Array<() => void> = [];
 
-    let unlisten: (() => void) | undefined;
-    listen('open-settings', () => openSettings())
-      .then((remove) => {
-        unlisten = remove;
-      })
-      .catch((error) => log.warn('Failed to listen for open-settings:', error));
-    cleanups.push(() => unlisten?.());
+    const unlistenSettings = onOpenSettings(() => openSettings());
+    unlistenSettings.catch((error) => log.warn('Failed to listen for open-settings:', error));
+    unlistenSettings.then((remove) => cleanups.push(remove));
+
+    const toggleMic = () => {
+      const embed = store.get(callEmbedAtom);
+      if (!embed) {
+        log.warn('Global mute-microphone shortcut pressed but no active call embed');
+        return;
+      }
+      embed.control.toggleMicrophone();
+    };
+
+    const toggleDeafen = () => {
+      const embed = store.get(callEmbedAtom);
+      if (!embed) {
+        log.warn('Global deafen shortcut pressed but no active call embed');
+        return;
+      }
+      embed.control.toggleSound();
+    };
+
+    const unlistenMic = onCallToggleMic(toggleMic);
+    unlistenMic.catch((error) => log.warn('Failed to listen for call-toggle-mic:', error));
+    unlistenMic.then((remove) => cleanups.push(remove));
+
+    const unlistenDeafen = onCallToggleDeafen(toggleDeafen);
+    unlistenDeafen.catch((error) => log.warn('Failed to listen for call-toggle-deafen:', error));
+    unlistenDeafen.then((remove) => cleanups.push(remove));
 
     if (os !== 'macos') {
       const onKeyDown = (event: KeyboardEvent) => {
@@ -53,7 +78,7 @@ export function DesktopShortcuts() {
     }
 
     return () => cleanups.forEach((cleanup) => cleanup());
-  }, [openSettings]);
+  }, [openSettings, store]);
 
   return null;
 }

@@ -124,6 +124,23 @@ pub fn register_global_shortcuts(app: &AppHandle<crate::BrowserEngine>) {
     }
 }
 
+/// (Re)registers a call global shortcut, unregistering the previously-active
+/// binding first if it changed.
+fn apply_call_shortcut(
+    gs: &tauri_plugin_global_shortcut::GlobalShortcut<crate::BrowserEngine>,
+    prev: &str,
+    next: &str,
+    name: &str,
+) {
+    if prev == next {
+        return;
+    }
+    let _ = gs.unregister(prev);
+    if let Err(error) = gs.register(next) {
+        log::warn!("Failed to register global {name} shortcut: {error}");
+    }
+}
+
 /// (Re)registers the call global shortcuts, unregistering the previously-active
 /// ones. `prev` is the previously-stored hotkey settings (before they were
 /// overwritten by `settings`).
@@ -134,35 +151,27 @@ pub fn apply_call_shortcuts(
 ) {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
-    let prev_mic = prev
-        .mic_hotkey
-        .as_deref()
-        .unwrap_or(DEFAULT_MIC_ACCELERATOR);
-    let prev_deafen = prev
-        .deafen_hotkey
-        .as_deref()
-        .unwrap_or(DEFAULT_DEAFEN_ACCELERATOR);
-    let next_mic = settings
-        .mic_hotkey
-        .as_deref()
-        .unwrap_or(DEFAULT_MIC_ACCELERATOR);
-    let next_deafen = settings
-        .deafen_hotkey
-        .as_deref()
-        .unwrap_or(DEFAULT_DEAFEN_ACCELERATOR);
-
     let gs = app.global_shortcut();
-
-    if prev_mic != next_mic {
-        let _ = gs.unregister(prev_mic);
-        if let Err(error) = gs.register(next_mic) {
-            log::warn!("Failed to register global mute microphone shortcut: {error}");
-        }
-    }
-    if prev_deafen != next_deafen {
-        let _ = gs.unregister(prev_deafen);
-        if let Err(error) = gs.register(next_deafen) {
-            log::warn!("Failed to register global deafen shortcut: {error}");
-        }
-    }
+    apply_call_shortcut(
+        gs,
+        prev.mic_hotkey
+            .as_deref()
+            .unwrap_or(DEFAULT_MIC_ACCELERATOR),
+        settings
+            .mic_hotkey
+            .as_deref()
+            .unwrap_or(DEFAULT_MIC_ACCELERATOR),
+        "mute microphone",
+    );
+    apply_call_shortcut(
+        gs,
+        prev.deafen_hotkey
+            .as_deref()
+            .unwrap_or(DEFAULT_DEAFEN_ACCELERATOR),
+        settings
+            .deafen_hotkey
+            .as_deref()
+            .unwrap_or(DEFAULT_DEAFEN_ACCELERATOR),
+        "deafen",
+    );
 }

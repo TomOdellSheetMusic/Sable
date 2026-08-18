@@ -210,10 +210,7 @@ fn apply_desktop_settings(
         let prev_hotkeys = DesktopSettings {
             mic_hotkey: prev_mic,
             deafen_hotkey: prev_deafen,
-            close_to_background_on_close: settings.close_to_background_on_close,
-            show_system_tray_icon: settings.show_system_tray_icon,
-            use_custom_title_bar: settings.use_custom_title_bar,
-            spellcheck: settings.spellcheck,
+            ..settings.clone()
         };
         crate::desktop::menu::apply_call_shortcuts(app, &prev_hotkeys, &settings);
     }

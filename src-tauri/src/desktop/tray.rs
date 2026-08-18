@@ -1,10 +1,11 @@
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 use crate::desktop::runtime_state::DesktopRuntimeState;
 use crate::desktop::settings::{
     desktop_settings_from_values, tray_available_for_session, use_custom_title_bar_default,
-    DesktopSettings, CLOSE_TO_BACKGROUND_ON_CLOSE_KEY, DESKTOP_SETTINGS_PATH,
-    LEGACY_KEEP_BACKGROUND_RUNNING_KEY, SHOW_SYSTEM_TRAY_ICON_KEY, SPELLCHECK_KEY,
+    DesktopSettings, CLOSE_TO_BACKGROUND_ON_CLOSE_KEY, DEAFEN_HOTKEY_KEY, DESKTOP_SETTINGS_PATH,
+    LEGACY_KEEP_BACKGROUND_RUNNING_KEY, MIC_HOTKEY_KEY, SHOW_SYSTEM_TRAY_ICON_KEY, SPELLCHECK_KEY,
     USE_CUSTOM_TITLE_BAR_KEY,
 };
 use serde_json::json;
@@ -29,6 +30,9 @@ pub struct DesktopSettingsState {
     use_custom_title_bar: AtomicBool,
     spellcheck: AtomicBool,
     tray_available: AtomicBool,
+    /// Currently-registered call hotkeys (`None` means the default is active).
+    mic_hotkey: Mutex<Option<String>>,
+    deafen_hotkey: Mutex<Option<String>>,
 }
 
 impl Default for DesktopSettingsState {
@@ -39,6 +43,8 @@ impl Default for DesktopSettingsState {
             use_custom_title_bar: AtomicBool::new(use_custom_title_bar_default()),
             spellcheck: AtomicBool::new(true),
             tray_available: AtomicBool::new(false),
+            mic_hotkey: Mutex::new(None),
+            deafen_hotkey: Mutex::new(None),
         }
     }
 }
@@ -120,16 +126,26 @@ pub(crate) fn load_desktop_settings(
         store
             .get(LEGACY_KEEP_BACKGROUND_RUNNING_KEY)
             .and_then(|value| value.as_bool()),
+        store
+            .get(MIC_HOTKEY_KEY)
+            .and_then(|value| value.as_str().map(str::to_owned)),
+        store
+            .get(DEAFEN_HOTKEY_KEY)
+            .and_then(|value| value.as_str().map(str::to_owned)),
     ))
 }
 
-fn current_desktop_settings(app: &AppHandle<crate::BrowserEngine>) -> DesktopSettings {
+pub(crate) fn current_desktop_settings(app: &AppHandle<crate::BrowserEngine>) -> DesktopSettings {
     let state = app.state::<DesktopSettingsState>();
+    let mic_hotkey = state.mic_hotkey.lock().unwrap().clone();
+    let deafen_hotkey = state.deafen_hotkey.lock().unwrap().clone();
     DesktopSettings {
         close_to_background_on_close: state.close_to_background_on_close.load(Ordering::Relaxed),
         show_system_tray_icon: state.show_system_tray_icon.load(Ordering::Relaxed),
         use_custom_title_bar: state.use_custom_title_bar.load(Ordering::Relaxed),
         spellcheck: state.spellcheck.load(Ordering::Relaxed),
+        mic_hotkey,
+        deafen_hotkey,
     }
 }
 
@@ -181,26 +197,45 @@ fn apply_desktop_settings(
         .spellcheck
         .store(settings.spellcheck, Ordering::Relaxed);
 
-    apply_main_window_title_bar_settings(app, settings)?;
+    let prev_mic = state.mic_hotkey.lock().unwrap().clone();
+    let prev_deafen = state.deafen_hotkey.lock().unwrap().clone();
+
+    let hotkeys_changed = prev_mic != settings.mic_hotkey || prev_deafen != settings.deafen_hotkey;
+    *state.mic_hotkey.lock().unwrap() = settings.mic_hotkey.clone();
+    *state.deafen_hotkey.lock().unwrap() = settings.deafen_hotkey.clone();
+
+    apply_main_window_title_bar_settings(app, &settings)?;
+
+    if hotkeys_changed {
+        let prev_hotkeys = DesktopSettings {
+            mic_hotkey: prev_mic,
+            deafen_hotkey: prev_deafen,
+            close_to_background_on_close: settings.close_to_background_on_close,
+            show_system_tray_icon: settings.show_system_tray_icon,
+            use_custom_title_bar: settings.use_custom_title_bar,
+            spellcheck: settings.spellcheck,
+        };
+        crate::desktop::menu::apply_call_shortcuts(app, &prev_hotkeys, &settings);
+    }
 
     if settings.show_system_tray_icon && cfg!(not(target_os = "macos")) {
         if app.tray_by_id(MAIN_TRAY_ID).is_none() {
             match create_system_tray(app) {
                 Ok(()) => state.tray_available.store(
-                    tray_available_for_session(settings, true),
+                    tray_available_for_session(&settings, true),
                     Ordering::Relaxed,
                 ),
                 Err(error) => {
                     log::warn!("Failed to initialize system tray: {error}");
                     state.tray_available.store(
-                        tray_available_for_session(settings, false),
+                        tray_available_for_session(&settings, false),
                         Ordering::Relaxed,
                     );
                 }
             }
         } else {
             state.tray_available.store(
-                tray_available_for_session(settings, true),
+                tray_available_for_session(&settings, true),
                 Ordering::Relaxed,
             );
         }
@@ -214,7 +249,7 @@ fn apply_desktop_settings(
 
 fn apply_main_window_title_bar_settings(
     app: &AppHandle<crate::BrowserEngine>,
-    settings: DesktopSettings,
+    settings: &DesktopSettings,
 ) -> tauri::Result<()> {
     let Some(window) = app.get_webview_window(crate::MAIN_WINDOW_LABEL) else {
         return Ok(());
@@ -405,6 +440,8 @@ mod tests {
             show_system_tray_icon: true,
             use_custom_title_bar: false,
             spellcheck: true,
+            mic_hotkey: None,
+            deafen_hotkey: None,
         };
 
         assert_eq!(
@@ -420,6 +457,8 @@ mod tests {
             close_to_background_on_close: false,
             use_custom_title_bar: false,
             spellcheck: true,
+            mic_hotkey: None,
+            deafen_hotkey: None,
         };
 
         assert_eq!(
@@ -435,9 +474,11 @@ mod tests {
             show_system_tray_icon: true,
             use_custom_title_bar: false,
             spellcheck: true,
+            mic_hotkey: None,
+            deafen_hotkey: None,
         };
 
-        assert!(!tray_available_for_session(settings, false));
+        assert!(!tray_available_for_session(&settings, false));
         assert_eq!(
             exit_request_action(settings, NO_TRAY, None),
             if cfg!(target_os = "macos") {
@@ -464,6 +505,8 @@ mod tests {
             show_system_tray_icon: true,
             use_custom_title_bar: false,
             spellcheck: true,
+            mic_hotkey: None,
+            deafen_hotkey: None,
         };
 
         assert_eq!(
@@ -475,12 +518,14 @@ mod tests {
     #[test]
     fn missing_store_values_default_to_enabled() {
         assert_eq!(
-            desktop_settings_from_values(None, None, None, None, None),
+            desktop_settings_from_values(None, None, None, None, None, None, None),
             DesktopSettings {
                 close_to_background_on_close: true,
                 show_system_tray_icon: true,
                 use_custom_title_bar: use_custom_title_bar_default(),
                 spellcheck: true,
+                mic_hotkey: None,
+                deafen_hotkey: None,
             }
         );
     }
@@ -488,12 +533,22 @@ mod tests {
     #[test]
     fn legacy_background_store_value_migrates_to_close_behavior() {
         assert_eq!(
-            desktop_settings_from_values(Some(false), Some(false), Some(false), None, Some(true)),
+            desktop_settings_from_values(
+                Some(false),
+                Some(false),
+                Some(false),
+                None,
+                Some(true),
+                None,
+                None
+            ),
             DesktopSettings {
                 close_to_background_on_close: true,
                 show_system_tray_icon: false,
                 use_custom_title_bar: false,
                 spellcheck: true,
+                mic_hotkey: None,
+                deafen_hotkey: None,
             }
         );
     }
@@ -501,12 +556,22 @@ mod tests {
     #[test]
     fn explicit_store_values_are_preserved_when_legacy_background_is_off() {
         assert_eq!(
-            desktop_settings_from_values(Some(false), Some(false), Some(true), None, Some(false)),
+            desktop_settings_from_values(
+                Some(false),
+                Some(false),
+                Some(true),
+                None,
+                Some(false),
+                None,
+                None
+            ),
             DesktopSettings {
                 show_system_tray_icon: false,
                 close_to_background_on_close: false,
                 use_custom_title_bar: true,
                 spellcheck: true,
+                mic_hotkey: None,
+                deafen_hotkey: None,
             }
         );
     }

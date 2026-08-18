@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "desktop/", rename_all = "camelCase")]
 pub struct DesktopSettings {
@@ -9,6 +9,10 @@ pub struct DesktopSettings {
     pub show_system_tray_icon: bool,
     pub use_custom_title_bar: bool,
     pub spellcheck: bool,
+    /// Global hotkey that toggles the microphone. `None` means the default is used.
+    pub mic_hotkey: Option<String>,
+    /// Global hotkey that toggles deafen (mute everything). `None` means the default is used.
+    pub deafen_hotkey: Option<String>,
 }
 
 pub(crate) const DESKTOP_SETTINGS_PATH: &str = "desktop-preferences.json";
@@ -16,13 +20,15 @@ pub(crate) const CLOSE_TO_BACKGROUND_ON_CLOSE_KEY: &str = "closeToBackgroundOnCl
 pub(crate) const SHOW_SYSTEM_TRAY_ICON_KEY: &str = "showSystemTrayIcon";
 pub(crate) const USE_CUSTOM_TITLE_BAR_KEY: &str = "useCustomTitleBar";
 pub(crate) const SPELLCHECK_KEY: &str = "spellcheck";
+pub(crate) const MIC_HOTKEY_KEY: &str = "micHotkey";
+pub(crate) const DEAFEN_HOTKEY_KEY: &str = "deafenHotkey";
 pub(crate) const LEGACY_KEEP_BACKGROUND_RUNNING_KEY: &str = "keepBackgroundRunning";
 
 pub(crate) const fn use_custom_title_bar_default() -> bool {
     cfg!(target_os = "windows")
 }
 
-pub(crate) fn tray_available_for_session(settings: DesktopSettings, tray_created: bool) -> bool {
+pub(crate) fn tray_available_for_session(settings: &DesktopSettings, tray_created: bool) -> bool {
     settings.show_system_tray_icon && tray_created
 }
 
@@ -32,6 +38,8 @@ pub(crate) fn desktop_settings_from_values(
     use_custom_title_bar: Option<bool>,
     spellcheck: Option<bool>,
     keep_background_running: Option<bool>,
+    mic_hotkey: Option<String>,
+    deafen_hotkey: Option<String>,
 ) -> DesktopSettings {
     DesktopSettings {
         close_to_background_on_close: close_to_background_on_close.unwrap_or(true)
@@ -39,6 +47,8 @@ pub(crate) fn desktop_settings_from_values(
         show_system_tray_icon: show_system_tray_icon.unwrap_or(true),
         use_custom_title_bar: use_custom_title_bar.unwrap_or(use_custom_title_bar_default()),
         spellcheck: spellcheck.unwrap_or(true),
+        mic_hotkey,
+        deafen_hotkey,
     }
 }
 
@@ -55,6 +65,8 @@ mod tests {
             show_system_tray_icon: false,
             use_custom_title_bar: true,
             spellcheck: false,
+            mic_hotkey: None,
+            deafen_hotkey: None,
         };
 
         assert_eq!(
@@ -64,6 +76,8 @@ mod tests {
                 "showSystemTrayIcon": false,
                 "useCustomTitleBar": true,
                 "spellcheck": false,
+                "micHotkey": null,
+                "deafenHotkey": null,
             })
         );
     }
@@ -76,6 +90,8 @@ mod tests {
                 "showSystemTrayIcon": false,
                 "useCustomTitleBar": true,
                 "spellcheck": false,
+                "micHotkey": null,
+                "deafenHotkey": null,
             }))
             .unwrap(),
             DesktopSettings {
@@ -83,7 +99,26 @@ mod tests {
                 show_system_tray_icon: false,
                 use_custom_title_bar: true,
                 spellcheck: false,
+                mic_hotkey: None,
+                deafen_hotkey: None,
             }
+        );
+    }
+
+    #[test]
+    fn desktop_settings_deserialize_hotkeys() {
+        assert_eq!(
+            serde_json::from_value::<DesktopSettings>(json!({
+                "closeToBackgroundOnClose": true,
+                "showSystemTrayIcon": true,
+                "useCustomTitleBar": true,
+                "spellcheck": true,
+                "micHotkey": "Alt+Shift+M",
+                "deafenHotkey": "Alt+Shift+D",
+            }))
+            .unwrap()
+            .mic_hotkey,
+            Some("Alt+Shift+M".to_string())
         );
     }
 
@@ -96,18 +131,30 @@ mod tests {
         assert!(output.contains("showSystemTrayIcon: boolean"));
         assert!(output.contains("useCustomTitleBar: boolean"));
         assert!(output.contains("spellcheck: boolean"));
+        assert!(output.contains("micHotkey: string | null"));
+        assert!(output.contains("deafenHotkey: string | null"));
         assert!(!output.contains("keepBackgroundRunning: boolean"));
     }
 
     #[test]
     fn legacy_background_setting_keeps_close_behavior_enabled() {
         assert_eq!(
-            desktop_settings_from_values(Some(false), Some(false), Some(false), None, Some(true)),
+            desktop_settings_from_values(
+                Some(false),
+                Some(false),
+                Some(false),
+                None,
+                Some(true),
+                None,
+                None
+            ),
             DesktopSettings {
                 close_to_background_on_close: true,
                 show_system_tray_icon: false,
                 use_custom_title_bar: false,
                 spellcheck: true,
+                mic_hotkey: None,
+                deafen_hotkey: None,
             }
         );
     }
@@ -115,12 +162,22 @@ mod tests {
     #[test]
     fn explicit_close_setting_stays_disabled_when_legacy_background_is_off() {
         assert_eq!(
-            desktop_settings_from_values(Some(false), Some(true), Some(true), None, Some(false)),
+            desktop_settings_from_values(
+                Some(false),
+                Some(true),
+                Some(true),
+                None,
+                Some(false),
+                None,
+                None
+            ),
             DesktopSettings {
                 close_to_background_on_close: false,
                 show_system_tray_icon: true,
                 use_custom_title_bar: true,
                 spellcheck: true,
+                mic_hotkey: None,
+                deafen_hotkey: None,
             }
         );
     }
@@ -128,7 +185,7 @@ mod tests {
     #[test]
     fn missing_custom_title_bar_setting_uses_platform_default() {
         assert_eq!(
-            desktop_settings_from_values(Some(true), Some(true), None, None, None)
+            desktop_settings_from_values(Some(true), Some(true), None, None, None, None, None)
                 .use_custom_title_bar,
             cfg!(target_os = "windows")
         );
@@ -136,7 +193,11 @@ mod tests {
 
     #[test]
     fn missing_spellcheck_setting_defaults_to_enabled() {
-        assert!(desktop_settings_from_values(None, None, None, None, None).spellcheck);
-        assert!(!desktop_settings_from_values(None, None, None, Some(false), None).spellcheck);
+        assert!(
+            desktop_settings_from_values(None, None, None, None, None, None, None).spellcheck
+        );
+        assert!(
+            !desktop_settings_from_values(None, None, None, Some(false), None, None, None).spellcheck
+        );
     }
 }

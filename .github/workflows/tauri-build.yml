@@ -102,6 +102,13 @@ jobs:
             rust-targets: ''
             args: ''
             bundle_path: src-tauri/target/release/bundle
+          - name: Windows Debug
+            platform: windows-latest
+            asset-platform: windows-x86_64
+            rust-targets: ''
+            args: '--debug'
+            bundle_path: src-tauri/target/debug/bundle
+            debug: true
     env:
       TAG: ${{ needs.setup-release.outputs.tag }}
       VERSION: ${{ needs.setup-release.outputs.version }}
@@ -147,12 +154,13 @@ jobs:
         env:
           IS_NIGHTLY: ${{ needs.setup-release.outputs.nightly }}
           MATRIX_NAME: ${{ matrix.name }}
+          IS_DEBUG: ${{ matrix.debug == true }}
         run: |
           ARGS=""
-          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+          if [ "$IS_DEBUG" != "true" ] && [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
             ARGS='--config {"bundle":{"createUpdaterArtifacts":false}}'
           fi
-          if [ "$IS_NIGHTLY" = "true" ] && [ "$MATRIX_NAME" = "Windows" ]; then
+          if [ "$IS_NIGHTLY" = "true" ] && [ "$MATRIX_NAME" = "Windows" ] && [ "$IS_DEBUG" != "true" ]; then
             ARGS="$ARGS --bundles nsis"
           fi
           if [ "$IS_NIGHTLY" = "true" ]; then
@@ -187,7 +195,7 @@ jobs:
               done
 
       - name: Attest Windows bundles
-        if: ${{ matrix.name == 'Windows' }}
+        if: ${{ matrix.name == 'Windows' && matrix.debug != true }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
@@ -197,6 +205,7 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.sig
 
       - name: Attach bundles to release
+        if: ${{ matrix.debug != true }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -435,7 +444,7 @@ jobs:
         run: gh release upload "$TAG" latest.json --clobber
 
       - name: Remove superseded nightly assets
-        if: ${{ needs.setup-release.outputs.nightly == 'true' && needs.android.result == 'success' && steps.manifest.outputs.produced == 'true' }}
+        if: ${{ needs.setup-release.outputs.nightly == 'true' && steps.manifest.outputs.produced == 'true' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

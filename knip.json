@@ -9,7 +9,7 @@
   "ignoreFiles": ["src/app/generated/**/*"],
   "ignoreDependencies": [
     "buffer",
-    "@sableclient/sable-call-embedded",
+    "@tomodellsheetmusic/sable-call-embedded",
     "@matrix-org/matrix-sdk-crypto-wasm",
     "@sableclient/twemoji-font"
   ],

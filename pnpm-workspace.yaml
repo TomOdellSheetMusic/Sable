@@ -15,7 +15,7 @@ minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - 'matrix-js-sdk'
   - '@sableclient/matrixrtc'
-  - '@sableclient/sable-call-embedded'
+  - '@tomodellsheetmusic/sable-call-embedded'
   - '@sableclient/tauri-plugin-livekit-mobile'
   - '@sableclient/tauri-plugin-notifications-api'
   - '@sableclient/twemoji-font'

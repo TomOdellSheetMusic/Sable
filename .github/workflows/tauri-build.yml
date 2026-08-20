@@ -1,4 +1,4 @@
-name: Build Windows and Android apps
+name: Build desktop apps
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to build and attach Windows bundles to (e.g. v1.20.0)'
+        description: 'Release tag to build and attach desktop bundles to (e.g. v1.20.0)'
         required: true
         type: string
 
@@ -83,15 +83,25 @@ jobs:
           fi
 
   build:
-    name: Build Windows
+    name: Build ${{ matrix.name }}
     needs: setup-release
-    runs-on: windows-latest
+    runs-on: ${{ matrix.platform }}
     timeout-minutes: 60
     permissions:
       contents: write
       id-token: write
       attestations: write
       artifact-metadata: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            platform: windows-latest
+            asset-platform: windows-x86_64
+            rust-targets: ''
+            args: ''
+            bundle_path: src-tauri/target/release/bundle
     env:
       TAG: ${{ needs.setup-release.outputs.tag }}
       VERSION: ${{ needs.setup-release.outputs.version }}
@@ -116,17 +126,15 @@ jobs:
         with:
           tauri: 'true'
 
+      - name: Add Rust targets
+        if: ${{ matrix.rust-targets != '' }}
+        shell: bash
+        run: rustup target add ${{ matrix.rust-targets }}
+
       - name: Cache Rust build
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
-
-      - name: Build SableCall embedded bundle
-        shell: bash
-        env:
-          SABLE_CALL_REPO: ${{ secrets.SABLE_CALL_REPO }}
-          SABLE_CALL_REF: ${{ secrets.SABLE_CALL_REF }}
-        run: pnpm build:sable-call
 
       - name: Stamp release version into tauri.conf.json
         shell: bash
@@ -138,25 +146,29 @@ jobs:
         shell: bash
         env:
           IS_NIGHTLY: ${{ needs.setup-release.outputs.nightly }}
+          MATRIX_NAME: ${{ matrix.name }}
         run: |
           ARGS=""
           if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
             ARGS='--config {"bundle":{"createUpdaterArtifacts":false}}'
           fi
-          if [ "$IS_NIGHTLY" = "true" ]; then
+          if [ "$IS_NIGHTLY" = "true" ] && [ "$MATRIX_NAME" = "Windows" ]; then
             ARGS="$ARGS --bundles nsis"
+          fi
+          if [ "$IS_NIGHTLY" = "true" ]; then
             echo "SABLE_BUILD_FLAVOR=dev" >> "$GITHUB_ENV"
           fi
           echo "TAURI_BUILD_ARGS=${ARGS# }" >> "$GITHUB_ENV"
 
-      - name: Build Windows bundles
+      - name: Build desktop bundles
         shell: bash
-        run: pnpm tauri build $TAURI_BUILD_ARGS
+        run: pnpm tauri build ${{ matrix.args }} $TAURI_BUILD_ARGS
 
-      - name: Normalize Windows artifact names
+      - name: Normalize desktop artifact names
         shell: bash
         env:
-          BUNDLE_PATH: src-tauri/target/release/bundle
+          ASSET_PLATFORM: ${{ matrix.asset-platform }}
+          BUNDLE_PATH: ${{ matrix.bundle_path }}
         run: |
           test -d "$BUNDLE_PATH" || { echo "Bundle directory not found: $BUNDLE_PATH" >&2; exit 1; }
           find "$BUNDLE_PATH" -type f -print0 \
@@ -170,11 +182,12 @@ jobs:
                   *.msi) suffix='.msi' ;;
                   *) continue ;;
                 esac
-                target="$(dirname "$path")/Sable-${VERSION}-windows-x86_64${suffix}"
+                target="$(dirname "$path")/Sable-${VERSION}-${ASSET_PLATFORM}${suffix}"
                 [ "$path" = "$target" ] || mv "$path" "$target"
               done
 
       - name: Attest Windows bundles
+        if: ${{ matrix.name == 'Windows' }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
@@ -187,7 +200,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          BUNDLE_PATH: src-tauri/target/release/bundle
+          BUNDLE_PATH: ${{ matrix.bundle_path }}
         run: |
           test -d "$BUNDLE_PATH" || { echo "Bundle directory not found: $BUNDLE_PATH" >&2; exit 1; }
           find "$BUNDLE_PATH" -type f -name 'Sable-*' -print0 \
@@ -255,16 +268,27 @@ jobs:
         run: |
           echo "NDK_HOME=$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION" >> "$GITHUB_ENV"
 
-      - name: Build SableCall embedded bundle
-        shell: bash
-        env:
-          SABLE_CALL_REPO: ${{ secrets.SABLE_CALL_REPO }}
-          SABLE_CALL_REF: ${{ secrets.SABLE_CALL_REF }}
-        run: pnpm build:sable-call
-
       - name: Stamp release version into tauri.conf.json
         shell: bash
         run: node .github/scripts/set-tauri-version.mjs "$VERSION"
+
+      - name: Generate nightly Android project
+        if: ${{ needs.setup-release.outputs.nightly == 'true' }}
+        shell: bash
+        run: |
+          # Tauri requires source files at the configured package path. Overlay the
+          # nightly package rather than regenerating and losing tracked customizations.
+          APP_DIR=src-tauri/gen/android/app
+          NIGHTLY_PACKAGE_DIR="$APP_DIR/src/main/java/moe/sable/client/nightly"
+          NIGHTLY_SOURCE_DIR="$RUNNER_TEMP/android-nightly-package"
+          cp -a "$APP_DIR/src/main/java/moe/sable/client" "$NIGHTLY_SOURCE_DIR"
+          find "$NIGHTLY_SOURCE_DIR" -type f -exec sed -i \
+            's/moe\.sable\.client/moe.sable.client.nightly/g' {} +
+          find "$APP_DIR/src/main/java/moe/sable/client" -mindepth 1 -maxdepth 1 \
+            ! -name nightly -exec rm -rf {} +
+          mv "$NIGHTLY_SOURCE_DIR" "$NIGHTLY_PACKAGE_DIR"
+          sed -i 's/moe\.sable\.client/moe.sable.client.nightly/g' \
+            "$APP_DIR/build.gradle.kts" "$APP_DIR/src/main/AndroidManifest.xml"
 
       - name: Setup Android signing
         if: ${{ env.ANDROID_KEY_BASE64 != '' }}
@@ -284,7 +308,9 @@ jobs:
           if [ "$IS_NIGHTLY" = "true" ]; then
             export SABLE_BUILD_FLAVOR=dev
           fi
-          pnpm tauri android build --apk --aab --target aarch64 armv7
+          CONFIG_ARGS=""
+          [ "$IS_NIGHTLY" = "true" ] && CONFIG_ARGS="--config src-tauri/tauri.nightly.conf.json"
+          pnpm tauri android build $CONFIG_ARGS --apk --aab --target aarch64 armv7
           OUT='src-tauri/gen/android/app/build/outputs'
           APK=$(find "$OUT/apk/universal/release" -name '*.apk' -type f | head -1)
           AAB=$(find "$OUT/bundle/universalRelease" -name '*.aab' -type f | head -1)
@@ -342,7 +368,8 @@ jobs:
 
   updater-manifest:
     name: Publish updater manifest
-    needs: [setup-release, build]
+    needs: [setup-release, build, android]
+    if: ${{ always() && needs.setup-release.result == 'success' && needs.build.result == 'success'}}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -369,18 +396,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          NEEDS_SETUP_RELEASE_OUTPUTS_NIGHTLY: ${{ needs.setup-release.outputs.nightly }}
+          IS_NIGHTLY: ${{ needs.setup-release.outputs.nightly }}
         run: |
-          if [ "${NEEDS_SETUP_RELEASE_OUTPUTS_NIGHTLY}" = "true" ]; then
-            gh release view "$TAG" --json assets \
-              | jq -r --arg cutoff "$STARTED_AT" \
-                  '.assets[] | select(.updatedAt <= $cutoff and (.name | endswith(".sig"))) | .name' \
-              | while read -r name; do
-                  [ -n "$name" ] || continue
-                  echo "Removing superseded nightly signature: $name"
-                  gh release delete-asset "$TAG" "$name" --yes
-                done
-          fi
           node .github/scripts/build-updater-manifest.mjs
           if [ -f latest.json ]; then
             echo "produced=true" >> "$GITHUB_OUTPUT"
@@ -394,13 +411,6 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: latest.json
-
-      - name: Upload updater manifest
-        if: steps.manifest.outputs.produced == 'true'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" latest.json --clobber
 
       - name: Finalize nightly release
         if: ${{ needs.setup-release.outputs.nightly == 'true' && steps.manifest.outputs.produced == 'true' }}
@@ -417,6 +427,19 @@ jobs:
             --title "Nightly (dev)" \
             --notes "Rolling nightly build $VERSION from dev — $GIT_SHA"
 
+      - name: Upload updater manifest
+        if: steps.manifest.outputs.produced == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" latest.json --clobber
+
+      - name: Remove superseded nightly assets
+        if: ${{ needs.setup-release.outputs.nightly == 'true' && needs.android.result == 'success' && steps.manifest.outputs.produced == 'true' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
           # .json manifests are overwritten in place, not accumulated.
           gh release view nightly --json assets \
             | jq -r --arg cutoff "$STARTED_AT" \

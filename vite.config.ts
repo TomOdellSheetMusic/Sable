@@ -75,61 +75,12 @@ const isReleaseTag = (() => {
 
 const baseProductName = typeof appConfig.productName === 'string' ? appConfig.productName : 'Sable';
 
-// The SableCall embedded bundle source. scripts/build-sable-call.mjs writes the
-// fork build directly to the git-ignored public/element-call/ dir. That fork
-// bundle (if present) is copied into dist/public/element-call for the packaged
-// desktop app; otherwise we fall back to copying from the published
-// @sableclient/sable-call-embedded npm package — keeping `pnpm install`-only
-// local dev working without ever needing a SableCall rebuild.
-//
-// NOTE: vite uses `publicDir: false`, so the ONLY thing that produces
-// dist/public/element-call (which the desktop app loads via the asset protocol)
-// is this copy target. It must always be present, for both the fork build and
-// the npm fallback, otherwise the packaged app has no call UI.
-const hasForkCallBuild = fs.existsSync(path.join(__dirname, 'public/element-call/index.html'));
-const sableCallDistSource = hasForkCallBuild
-  ? 'public/element-call/*'
-  : 'node_modules/@sableclient/sable-call-embedded/dist/*';
-
-// In dev, vite-plugin-static-copy's serve middleware serves /element-call/*
-// straight from whichever source was resolved at startup and is ordered BEFORE
-// Vite's public-dir middleware. That means changes re-copied into the
-// git-ignored public/element-call/ (e.g. `pnpm build:sable-call` with
-// SABLE_CALL_DIR, or a manual copy from a local SableCall checkout) are never
-// picked up by the dev server. This plugin takes over /element-call/* in dev
-// and serves from the actual public dir so local changes are respected.
-function devElementCallServe() {
-  return {
-    name: 'vite-plugin-dev-element-call-serve',
-    apply: 'serve' as const,
-    configureServer(server: ViteDevServer) {
-      server.middlewares.use((req, res, next) => {
-        let pathname: string | undefined;
-        try {
-          pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
-        } catch {
-          pathname = undefined;
-        }
-        if (!pathname || !pathname.startsWith('/element-call/')) {
-          next();
-          return;
-        }
-        if (pathname.endsWith('/')) pathname += 'index.html';
-        const filePath = path.join(server.config.root, 'public', pathname);
-        if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
-          next();
-          return;
-        }
-        res.setHeader('Cache-Control', 'no-cache');
-        fs.createReadStream(filePath).pipe(res);
-      });
-    },
-  };
-}
-
 const copyFiles = {
   targets: [
-    { src: sableCallDistSource, dest: 'public/element-call' },
+    {
+      src: 'node_modules/@tomodellsheetmusic/sable-call-embedded/dist/*',
+      dest: 'public/element-call',
+    },
     {
       src: 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
       dest: '',
@@ -243,7 +194,6 @@ export default defineConfig(({ command }) => {
     },
     plugins: [
       serverMatrixSdkCryptoWasm(),
-      devElementCallServe(),
       topLevelAwait({
         // The export name of top-level await promise for each chunk module
         promiseExportName: '__tla',

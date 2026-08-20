@@ -106,7 +106,7 @@ jobs:
             platform: windows-latest
             asset-platform: windows-x86_64
             rust-targets: ''
-            args: '--debug'
+            args: '--debug --bundles nsis'
             bundle_path: src-tauri/target/debug/bundle
             debug: true
     env:
@@ -157,7 +157,7 @@ jobs:
           IS_DEBUG: ${{ matrix.debug == true }}
         run: |
           ARGS=""
-          if [ "$IS_DEBUG" != "true" ] && [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
             ARGS='--config {"bundle":{"createUpdaterArtifacts":false}}'
           fi
           if [ "$IS_NIGHTLY" = "true" ] && [ "$MATRIX_NAME" = "Windows" ] && [ "$IS_DEBUG" != "true" ]; then
@@ -177,6 +177,7 @@ jobs:
         env:
           ASSET_PLATFORM: ${{ matrix.asset-platform }}
           BUNDLE_PATH: ${{ matrix.bundle_path }}
+          ARTIFACT_SUFFIX: ${{ matrix.debug == true && '-debug' || '' }}
         run: |
           test -d "$BUNDLE_PATH" || { echo "Bundle directory not found: $BUNDLE_PATH" >&2; exit 1; }
           find "$BUNDLE_PATH" -type f -print0 \
@@ -190,7 +191,7 @@ jobs:
                   *.msi) suffix='.msi' ;;
                   *) continue ;;
                 esac
-                target="$(dirname "$path")/Sable-${VERSION}-${ASSET_PLATFORM}${suffix}"
+                target="$(dirname "$path")/Sable-${VERSION}-${ASSET_PLATFORM}${ARTIFACT_SUFFIX}${suffix}"
                 [ "$path" = "$target" ] || mv "$path" "$target"
               done
 
@@ -205,7 +206,6 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.sig
 
       - name: Attach bundles to release
-        if: ${{ matrix.debug != true }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

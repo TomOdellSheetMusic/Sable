@@ -4,7 +4,9 @@
 // the same approach as Capacitor's hideFormAccessoryBar.
 
 use std::ffi::CString;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
+use std::time::Duration;
 
 use objc2::rc::{Allocated, Retained};
 use objc2::runtime::{
@@ -332,9 +334,17 @@ fn load_system_sound(caf_bytes: &[u8], temp_name: &str) -> Result<u32, String> {
     }
 }
 
+static NOTIFICATION_SOUND_PLAYING: AtomicBool = AtomicBool::new(false);
+
 pub(crate) fn play_notification_sound(kind: String) -> Result<(), String> {
     static NOTIFICATION_SOUND: OnceLock<u32> = OnceLock::new();
     static INVITE_SOUND: OnceLock<u32> = OnceLock::new();
+
+    // AudioServices plays asynchronously and cannot stop an active sound. Drop
+    // bursts until this clip finishes instead of overlapping notification audio.
+    if NOTIFICATION_SOUND_PLAYING.swap(true, Ordering::Relaxed) {
+        return Ok(());
+    }
 
     let cache = if kind == "invite" {
         &INVITE_SOUND
@@ -356,12 +366,27 @@ pub(crate) fn play_notification_sound(kind: String) -> Result<(), String> {
     let sound_id = match cache.get() {
         Some(id) => *id,
         None => {
-            let id = load_system_sound(caf, name)?;
+            let id = match load_system_sound(caf, name) {
+                Ok(id) => id,
+                Err(error) => {
+                    NOTIFICATION_SOUND_PLAYING.store(false, Ordering::Relaxed);
+                    return Err(error);
+                }
+            };
             let _ = cache.set(id);
             id
         }
     };
     unsafe { AudioServicesPlaySystemSound(sound_id) };
+    let duration = if kind == "invite" {
+        Duration::from_millis(1905)
+    } else {
+        Duration::from_millis(817)
+    };
+    std::thread::spawn(move || {
+        std::thread::sleep(duration);
+        NOTIFICATION_SOUND_PLAYING.store(false, Ordering::Relaxed);
+    });
     Ok(())
 }
 

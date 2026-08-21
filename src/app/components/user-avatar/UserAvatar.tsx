@@ -1,9 +1,8 @@
 import { AvatarFallback, AvatarImage, color } from 'folds';
 import type { ReactEventHandler, ReactNode } from 'react';
-import { useEffect, useState } from 'react';
 import classNames from 'classnames';
 import colorMXID from '$utils/colorMXID';
-import { useRenderableMediaSource } from '$hooks/useRenderableMediaUrl';
+import { useAvatarMediaSource } from '$hooks/useRenderableMediaUrl';
 import * as css from './UserAvatar.css';
 
 type UserAvatarProps = {
@@ -27,12 +26,7 @@ export function UserAvatar({
   fallbackColor,
   renderFallback,
 }: UserAvatarProps) {
-  const [error, setError] = useState(false);
-  const mediaSrc = useRenderableMediaSource(src);
-
-  useEffect(() => {
-    setError(false);
-  }, [mediaSrc]);
+  const { mediaSrc, error, onError } = useAvatarMediaSource(src);
 
   if (!mediaSrc || error) {
     return (
@@ -55,7 +49,7 @@ export function UserAvatar({
       alt={alt}
       loading="lazy"
       decoding="async"
-      onError={() => setError(true)}
+      onError={onError}
       onLoad={handleImageLoad}
       draggable={false}
     />

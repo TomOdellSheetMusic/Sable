@@ -698,7 +698,7 @@ export function useTimelineSync({
 
   useMatrixEvent(room, RoomEvent.LocalEchoUpdated, handleLocalEchoUpdated);
 
-  const decryptedFrameRef = useRef<number>();
+  const decryptedFrameRef = useRef<number | undefined>(undefined);
   const handleDecrypted = useCallback(
     (mEvent: MatrixEvent) => {
       if (mEvent.getRoomId() !== room.roomId) return;

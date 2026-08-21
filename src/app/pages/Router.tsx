@@ -6,7 +6,7 @@ import {
   createHashRouter,
   createRoutesFromElements,
   redirect,
-} from 'react-router-dom';
+} from 'react-router';
 import * as Sentry from '@sentry/react';
 
 import type { ClientConfig } from '$hooks/useClientConfig';
@@ -107,6 +107,7 @@ const PublicRooms = lazy(() =>
 );
 import { setAfterLoginRedirectPath } from './afterLoginRedirectPath';
 import { legacyAuthLoader } from './legacyAuthRedirect';
+import { ensureTauriHistoryRoot } from './tauriHistoryRoot';
 import { WelcomePage } from './client/WelcomePage';
 import { SidebarNav } from './client/SidebarNav';
 import { MobileFriendlySidebarNav, MobileFriendlyBottomNav } from './MobileFriendly';
@@ -151,8 +152,13 @@ export const createRouter = (clientConfig: ClientConfig, screenSize: ScreenSize)
   const { hashRouter } = clientConfig;
   const mobile = screenSize === ScreenSize.Mobile;
 
+  // Before the router reads the initial location, give webview-level back
+  // navigation somewhere to land on a fresh deep-linked load.
+  ensureTauriHistoryRoot(hashRouter);
+
   const routes = createRoutesFromElements(
     <Route
+      HydrateFallback={() => <SplashScreen>{null}</SplashScreen>}
       element={
         <>
           <TauriDeepLinkBridge />

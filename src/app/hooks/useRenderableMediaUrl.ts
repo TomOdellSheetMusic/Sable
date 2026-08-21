@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { useAtomValue } from 'jotai';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { activeSessionIdAtom } from '$state/sessions';
@@ -13,6 +13,7 @@ import {
   subscribeSWMediaAuthSupport,
 } from '$utils/swMediaAuth';
 import { rewriteAuthenticatedMediaUrl } from '$utils/matrix';
+import { addMediaRetryRevision } from '$utils/mediaUrl';
 
 type ObjectUrlEntry = {
   refs: number;
@@ -45,8 +46,9 @@ function pruneUnreferencedCache(): void {
   }
 }
 
-function getObjectUrlCacheKey(sessionScope: string, url: string): string {
-  return `${sessionScope}\x00${getStableMediaCacheKeyFragment(url)}`;
+function getObjectUrlCacheKey(sessionScope: string, url: string, retryRevision = 0): string {
+  const retryFragment = retryRevision > 0 ? `\x00retry=${retryRevision}` : '';
+  return `${sessionScope}\x00${getStableMediaCacheKeyFragment(url)}${retryFragment}`;
 }
 
 function normalizeRenderableMediaUrl(url: string | undefined): string | undefined {
@@ -124,6 +126,22 @@ type LoopbackEntry = { promise: Promise<string>; url?: string };
 // Keyed by the `sable-media` URL so one avatar repeated down a timeline resolves once.
 const loopbackCache = new Map<string, LoopbackEntry>();
 
+// Bumped when the loopback cache is cleared (session or token change). Capability URLs
+// embed the token, so a rotation orphans every resolved URL until consumers re-resolve.
+let loopbackGeneration = 0;
+const loopbackGenerationListeners = new Set<() => void>();
+
+function subscribeLoopbackGeneration(listener: () => void): () => void {
+  loopbackGenerationListeners.add(listener);
+  return () => {
+    loopbackGenerationListeners.delete(listener);
+  };
+}
+
+function getLoopbackGeneration(): number {
+  return loopbackGeneration;
+}
+
 // Resolved up front because wry rejects a 3xx from a protocol handler, so the loopback cannot
 // be reached by redirect. Used on every Tauri platform: it also keeps the immutable caching
 // the runtimes strip from custom-protocol responses.
@@ -150,6 +168,10 @@ function resolveLoopbackUrl(protocolUrl: string): LoopbackEntry {
 // Capabilities are keyed by access token, so they do not survive a session change.
 export function clearLoopbackMediaUrlCache(): void {
   loopbackCache.clear();
+  loopbackGeneration += 1;
+  for (const listener of loopbackGenerationListeners) {
+    listener();
+  }
 }
 
 export function clearRenderableMediaUrlCache(): void {
@@ -166,14 +188,17 @@ export function getRenderableMediaUrlStats(): { cacheSize: number; inflightCount
   return { cacheSize: objectUrlCache.size, inflightCount: inflightRequests.size };
 }
 
-export function useRenderableMediaUrl(url: string | undefined): string | undefined {
+export function useRenderableMediaUrl(
+  url: string | undefined,
+  retryRevision = 0
+): string | undefined {
   const tauri = isTauri();
   const activeSessionId = useAtomValue(activeSessionIdAtom);
   const sessionScope = activeSessionId ?? getCurrentMediaSessionScope();
   const renderableUrl = normalizeRenderableMediaUrl(url);
   const objectUrlCacheKey =
     renderableUrl && !renderableUrl.startsWith('blob:')
-      ? getObjectUrlCacheKey(sessionScope, renderableUrl)
+      ? getObjectUrlCacheKey(sessionScope, renderableUrl, retryRevision)
       : undefined;
   // Media elements and bare URLs are only safe once the (current) service
   // worker has proven it intercepts authenticated media; until then media goes
@@ -182,27 +207,39 @@ export function useRenderableMediaUrl(url: string | undefined): string | undefin
     () => getCachedSWMediaAuthSupport() ?? false
   );
   const protocolUrl = tauri ? (rewriteAuthenticatedMediaUrl(url ?? null) ?? undefined) : undefined;
+  const generation = useSyncExternalStore(
+    subscribeLoopbackGeneration,
+    getLoopbackGeneration,
+    getLoopbackGeneration
+  );
   // A settled entry resolves synchronously, so a repeated avatar never flashes a fallback.
-  const [loopbackState, setLoopbackState] = useState<{ source?: string; url?: string }>(() => ({
+  const [loopbackState, setLoopbackState] = useState<{
+    source?: string;
+    url?: string;
+    generation: number;
+  }>(() => ({
     source: protocolUrl,
     url: tauri && protocolUrl ? loopbackCache.get(protocolUrl)?.url : undefined,
+    generation,
   }));
 
   useEffect(() => {
     if (!tauri || !protocolUrl) return undefined;
     const entry = resolveLoopbackUrl(protocolUrl);
     if (entry.url) {
-      setLoopbackState({ source: protocolUrl, url: entry.url });
+      setLoopbackState({ source: protocolUrl, url: entry.url, generation });
       return undefined;
     }
     let cancelled = false;
     void entry.promise.then((resolved) => {
-      if (!cancelled) setLoopbackState({ source: protocolUrl, url: resolved });
+      if (!cancelled) {
+        setLoopbackState({ source: protocolUrl, url: resolved, generation });
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [tauri, protocolUrl]);
+  }, [tauri, protocolUrl, generation]);
   const needsBlob = !swMediaAuthSupported;
   const usesExistingObjectUrl = renderableUrl?.startsWith('blob:') ?? false;
   const [resolvedState, setResolvedState] = useState<ResolvedMediaUrlState>(() => {
@@ -272,7 +309,11 @@ export function useRenderableMediaUrl(url: string | undefined): string | undefin
     // No protocolUrl fallback while resolving: resolveLoopbackUrl already degrades to it,
     // and handing out the custom-scheme URL first would fail a media element.
     if (!protocolUrl) return undefined;
-    if (loopbackState.source === protocolUrl) return loopbackState.url;
+    // A URL resolved under an older generation is dead after a cache clear; the effect
+    // re-resolves against the current session.
+    if (loopbackState.source === protocolUrl && loopbackState.generation === generation) {
+      return loopbackState.url;
+    }
     return loopbackCache.get(protocolUrl)?.url;
   }
 
@@ -289,8 +330,80 @@ export function useRenderableMediaUrl(url: string | undefined): string | undefin
 
 // Undefined while the url is still being prepared: on Tauri, rendering the raw source first
 // only means a second load once the loopback url lands, and an error on either latches.
-export function useRenderableMediaSource(url: string | undefined): string | undefined {
-  const resolvedUrl = useRenderableMediaUrl(url);
+export function useRenderableMediaSource(
+  url: string | undefined,
+  retryRevision = 0
+): string | undefined {
+  const retriedUrl = url && retryRevision > 0 ? addMediaRetryRevision(url, retryRevision) : url;
+  const resolvedUrl = useRenderableMediaUrl(retriedUrl, retryRevision);
   if (resolvedUrl) return resolvedUrl;
-  return isTauri() ? undefined : url;
+  return isTauri() ? undefined : retriedUrl;
+}
+
+const AVATAR_RETRY_DELAYS_MS = [500, 1500, 4500];
+
+type AvatarMediaSource = {
+  mediaSrc: string | undefined;
+  error: boolean;
+  onError: () => void;
+};
+
+// `crossOrigin` must match what the caller puts on its own <img>, or the out-of-band retry
+// below warms a different cache entry and the rendered element requests the media again.
+type AvatarMediaSourceOptions = {
+  crossOrigin?: 'anonymous';
+};
+
+export function useAvatarMediaSource(
+  src: string | undefined,
+  options?: AvatarMediaSourceOptions
+): AvatarMediaSource {
+  const crossOrigin = options?.crossOrigin;
+  const [error, setError] = useState(false);
+  const [retryRevision, setRetryRevision] = useState(0);
+  const mediaSrc = useRenderableMediaSource(src, retryRevision);
+
+  useEffect(() => {
+    setError(false);
+    setRetryRevision(0);
+  }, [src]);
+
+  // First attempt only: on Tauri the resolved url arrives after the initial render, so an
+  // error latched against the earlier (or absent) source must not outlive it. A retry
+  // deliberately does not clear the latch here — the preload below owns that, which is what
+  // keeps the fallback on screen instead of blinking through an empty <img>.
+  useEffect(() => {
+    if (retryRevision > 0) return;
+    setError(false);
+  }, [mediaSrc, retryRevision]);
+
+  // Rendering a retried <img> straight away shows its placeholder background until the load
+  // settles, which reads as the avatar blinking once per attempt. Loading out of band keeps
+  // the fallback up and swaps to the image only once it is decodable, by which point the
+  // rendered element resolves from cache.
+  useEffect(() => {
+    if (!error || retryRevision === 0 || !mediaSrc) return undefined;
+
+    const probe = new Image();
+    if (crossOrigin && !mediaSrc.startsWith('blob:')) {
+      probe.crossOrigin = crossOrigin;
+    }
+    const onLoad = () => setError(false);
+    probe.addEventListener('load', onLoad, { once: true });
+    probe.src = mediaSrc;
+
+    return () => probe.removeEventListener('load', onLoad);
+  }, [error, retryRevision, mediaSrc, crossOrigin]);
+
+  useEffect(() => {
+    if (!error) return undefined;
+    const delay = AVATAR_RETRY_DELAYS_MS[retryRevision];
+    if (delay === undefined) return undefined;
+    const timer = setTimeout(() => setRetryRevision((revision) => revision + 1), delay);
+    return () => clearTimeout(timer);
+  }, [error, retryRevision]);
+
+  const onError = useCallback(() => setError(true), []);
+
+  return { mediaSrc, error, onError };
 }

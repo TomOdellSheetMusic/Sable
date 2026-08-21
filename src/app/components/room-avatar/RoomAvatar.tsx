@@ -1,7 +1,7 @@
 import type { JoinRule } from '$types/matrix-sdk';
 import { AvatarFallback, color } from 'folds';
 import type { ReactNode } from 'react';
-import { forwardRef, useEffect, useState } from 'react';
+import { forwardRef } from 'react';
 import type { IconProps } from '@phosphor-icons/react';
 import classNames from 'classnames';
 import { sizedIcon, type IconSizeToken } from '$components/icons/phosphor';
@@ -12,7 +12,7 @@ import {
   getRoomStandaloneIconComponent,
 } from '$components/icons/roomIcons';
 import colorMXID from '$utils/colorMXID';
-import { useRenderableMediaSource } from '$hooks/useRenderableMediaUrl';
+import { useAvatarMediaSource } from '$hooks/useRenderableMediaUrl';
 import * as css from './RoomAvatar.css';
 import { AvatarImage } from './AvatarImage';
 
@@ -25,12 +25,8 @@ type RoomAvatarProps = {
 };
 
 export function RoomAvatar({ roomId, src, alt, renderFallback, uniformIcons }: RoomAvatarProps) {
-  const [error, setError] = useState(false);
-  const mediaSrc = useRenderableMediaSource(src);
-
-  useEffect(() => {
-    setError(false);
-  }, [mediaSrc]);
+  // Mirrors the crossOrigin AvatarImage puts on the rendered element.
+  const { mediaSrc, error, onError } = useAvatarMediaSource(src, { crossOrigin: 'anonymous' });
 
   if (!mediaSrc || error) {
     return (
@@ -43,14 +39,7 @@ export function RoomAvatar({ roomId, src, alt, renderFallback, uniformIcons }: R
     );
   }
 
-  return (
-    <AvatarImage
-      src={mediaSrc}
-      alt={alt}
-      uniformIcons={uniformIcons}
-      onError={() => setError(true)}
-    />
-  );
+  return <AvatarImage src={mediaSrc} alt={alt} uniformIcons={uniformIcons} onError={onError} />;
 }
 
 export const RoomIcon = forwardRef<

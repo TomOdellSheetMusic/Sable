@@ -118,13 +118,13 @@ export function useProfiles(
 }
 
 function useFilteredProfiles(
-  profiles: Persona[],
+  profiles: Persona[] | undefined,
   mountedRef: MutableRefObject<boolean>,
-  searchInputRef: RefObject<HTMLInputElement>,
+  searchInputRef: RefObject<HTMLInputElement | null>,
   profileFetchGenerationRef: MutableRefObject<number>
 ) {
   const [filteredProfiles, setFilteredProfiles] = useState<PerMessageProfileMsc4461[] | undefined>(
-    profiles ?? undefined
+    profiles
   );
   //
   useEffect(() => {
@@ -285,7 +285,7 @@ export function PersonaPicker({
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { filteredProfiles, filter, clearFilter } = useFilteredProfiles(
-    profiles ?? [],
+    profiles,
     mountedRef,
     searchInputRef,
     profileFetchGenerationRef
@@ -453,6 +453,10 @@ export function PersonaPicker({
       <IconButton
         aria-pressed={!!AddPersonaMenuAnchor}
         onClick={(evt) => {
+          if (isMobileOrTablet()) {
+            const activeElement = document.activeElement;
+            if (activeElement instanceof HTMLElement) activeElement.blur();
+          }
           setAddPersonaMenuAnchor(evt.currentTarget.getBoundingClientRect());
         }}
         onPointerDown={suppressEditorRefocus}
@@ -512,7 +516,7 @@ export function TemporaryPersonaPicker({
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { filteredProfiles, filter, clearFilter } = useFilteredProfiles(
-    profiles ?? [],
+    profiles,
     mountedRef,
     searchInputRef,
     profileFetchGenerationRef

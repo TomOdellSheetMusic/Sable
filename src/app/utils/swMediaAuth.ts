@@ -112,9 +112,13 @@ if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && hasServ
     cachedSupport = controller ? undefined : false;
     inflightProbe = undefined;
     probedController = undefined;
-    notify(false);
-    if (controller) {
-      void probeSWMediaAuthSupport();
+    if (!controller) {
+      notify(false);
+      return;
     }
+    // No speculative `false` here: it would flip every mounted media consumer to the
+    // blob path and back within the probe window, blinking every avatar on screen.
+    // The probe below notifies the real answer, and it is bounded by PROBE_TIMEOUT_MS.
+    void probeSWMediaAuthSupport();
   });
 }

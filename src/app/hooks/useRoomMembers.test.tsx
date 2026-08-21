@@ -16,6 +16,7 @@ describe('useRoomMembers', () => {
     const room = {
       roomId: '!room:example.org',
       getMembers: () => [] as RoomMember[],
+      getJoinedMemberCount: () => 1,
       loadMembersIfNeeded: vi
         .fn<() => Promise<void>>()
         .mockRejectedValue(new Error('NetworkError')),
@@ -39,6 +40,7 @@ describe('useRoomMembers', () => {
     const room = {
       roomId: '!room:example.org',
       getMembers: () => [] as RoomMember[],
+      getJoinedMemberCount: () => 1,
       loadMembersIfNeeded: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     } as unknown as Room;
     const handlers = new Map<string, () => void>();
@@ -64,6 +66,7 @@ describe('useRoomMembers', () => {
     const room = {
       roomId: '!room:example.org',
       getMembers: () => [] as RoomMember[],
+      getJoinedMemberCount: () => 1,
       loadMembersIfNeeded: vi
         .fn<() => Promise<void>>()
         .mockRejectedValue(new Error('NetworkError')),
@@ -83,6 +86,26 @@ describe('useRoomMembers', () => {
     await Promise.resolve();
     act(() => handlers.get(ClientEvent.Sync)?.());
 
+    expect(hydrateAllRoomMembers).not.toHaveBeenCalled();
+  });
+
+  it('does not load a full roster for large rooms', () => {
+    hydrateAllRoomMembers.mockClear();
+    const room = {
+      roomId: '!room:example.org',
+      getMembers: () => [] as RoomMember[],
+      getJoinedMemberCount: () => 30_000,
+      loadMembersIfNeeded: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    } as unknown as Room;
+    const mx = {
+      getRoom: () => room,
+      on: vi.fn<() => void>(),
+      removeListener: vi.fn<() => void>(),
+    } as unknown as MatrixClient;
+
+    renderHook(() => useRoomMembers(mx, room.roomId));
+
+    expect(room.loadMembersIfNeeded).not.toHaveBeenCalled();
     expect(hydrateAllRoomMembers).not.toHaveBeenCalled();
   });
 

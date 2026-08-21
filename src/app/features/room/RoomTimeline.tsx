@@ -476,8 +476,8 @@ export function RoomTimeline({
   const initialScrollTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const initialScrollCancelledRef = useRef(false);
   const hasUserScrollIntentRef = useRef(false);
-  const focusedPaginationIntentRef = useRef<'backward' | 'forward'>();
-  const touchStartYRef = useRef<number>();
+  const focusedPaginationIntentRef = useRef<'backward' | 'forward' | undefined>(undefined);
+  const touchStartYRef = useRef<number | undefined>(undefined);
   const pendingReadyRef = useRef(false);
   const currentRoomIdRef = useRef(room.roomId);
 
@@ -934,12 +934,13 @@ export function RoomTimeline({
             : getProcessedRowIndexForRawTimelineIndex(rows, absoluteIndex)?.rowIndex;
         if (processedIndex !== undefined && vListRef.current) {
           vListRef.current.scrollToIndex(processedIndex, { align: 'start' });
+          setAtBottom(false);
         }
         unreadScrollToRef.current = false;
         setUnreadInfo((prev) => (prev ? { ...prev, scrollTo: false } : prev));
       }
     }
-  }, [room, unreadInfo, timelineSync.timeline.linkedTimelines, eventId, isReady]);
+  }, [room, unreadInfo, timelineSync.timeline.linkedTimelines, eventId, isReady, setAtBottom]);
 
   useEffect(() => {
     const el = messageListRef.current;
@@ -999,6 +1000,7 @@ export function RoomTimeline({
 
       if (processedIndex !== undefined) {
         timelineSync.cancelEventTimelineLoad();
+        setAtBottom(false);
         if (vListRef.current) {
           vListRef.current.scrollToIndex(processedIndex, { align: 'center' });
         }
@@ -1062,6 +1064,7 @@ export function RoomTimeline({
 
   const tryAutoMarkAsRead = useCallback(() => {
     if (isInactivePanel) return; // Don't clear unread while room is behind the list
+    if (!atBottomRef.current) return;
     if (!readUptoEventIdRef.current) {
       requestAnimationFrame(() => markAsRead(mx, room.roomId, hideReads));
       return;
@@ -1344,7 +1347,7 @@ export function RoomTimeline({
   });
 
   processedEventsRef.current = processedEvents;
-  const previousProcessedEventIdsRef = useRef<string[]>();
+  const previousProcessedEventIdsRef = useRef<string[] | undefined>(undefined);
   const processedEventIds = processedEvents.map((event) => event.id);
   const previousProcessedEventIds = previousProcessedEventIdsRef.current;
   const shouldShift =
@@ -1430,7 +1433,7 @@ export function RoomTimeline({
   }, [room.roomId, scrollOwner, timelineSync.eventsLength, timelineSync.backwardStatus]);
 
   return (
-    <Box grow="Yes" style={{ position: 'relative' }}>
+    <Box grow="Yes" style={{ position: 'relative', minWidth: 0, minHeight: 0, width: '100%' }}>
       {(hideTimelineForRoomState || (roomSyncLoading && timelineSync.eventsLength === 0)) && (
         <Box
           justifyContent="Center"
@@ -1469,6 +1472,7 @@ export function RoomTimeline({
         style={{
           flex: 1,
           minHeight: 0,
+          width: '100%',
           overflow: 'hidden',
           position: 'relative',
           opacity:
@@ -1489,6 +1493,7 @@ export function RoomTimeline({
             style={{
               flex: 1,
               minHeight: 0,
+              width: '100%',
               display: 'flex',
               flexDirection: 'column',
               paddingTop: topSpacerHeight > 0 ? topSpacerHeight : config.space.S600,

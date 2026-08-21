@@ -125,7 +125,8 @@ export const MessageMobileOptionsContainer = style({
   borderTopLeftRadius: toRem(20),
   borderTopRightRadius: toRem(20),
   boxShadow: '0 -4px 24px rgba(0, 0, 0, 0.15)',
-  paddingBottom: 'var(--mobile-sheet-safe-bottom, env(safe-area-inset-bottom, 0px))',
+  paddingBottom:
+    'var(--mobile-sheet-safe-bottom, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))',
 });
 
 export const MessageMobileOptionsContainerContained = style({

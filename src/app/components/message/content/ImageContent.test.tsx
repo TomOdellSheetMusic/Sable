@@ -236,7 +236,7 @@ describe('ImageContent', () => {
     }
   });
 
-  it('unwraps the Tauri media URL before downloading an encrypted image', async () => {
+  it('passes the Tauri media URL straight to the encrypted download', async () => {
     screenMocks.tauri = true;
     const renderViewer = vi.fn<(props: { getDownloadBlob?: () => Promise<Blob> }) => ReactNode>(
       () => <div>viewer</div>
@@ -257,7 +257,7 @@ describe('ImageContent', () => {
       await renderViewer.mock.calls[0]?.[0].getDownloadBlob?.();
 
       expect(downloadEncryptedMedia).toHaveBeenCalledWith(
-        'https://hs.example/_matrix/client/v1/media/download/example.org/abc123?__sable_media_cache=3',
+        'sable-media://https://hs.example/_matrix/client/v1/media/download/example.org/abc123?__sable_media_cache=3',
         expect.any(Function)
       );
     } finally {
@@ -278,15 +278,14 @@ describe('ImageContent', () => {
 
     touchTap(screen.getByRole('button', { name: 'View' }));
     const img = await screen.findByAltText('preview');
-    expect(vi.mocked(mxcUrlToHttp).mock.calls.at(-1)).toEqual([
+    expect(vi.mocked(mxcUrlToHttp)).toHaveBeenCalledWith(
       {},
       'mxc://example.org/abc123',
       false,
       800,
       600,
-      'scale',
-    ]);
-
+      'scale'
+    );
     Object.defineProperty(img, 'naturalWidth', { value: 800, configurable: true });
     Object.defineProperty(img, 'naturalHeight', { value: 600, configurable: true });
     fireEvent.load(img);

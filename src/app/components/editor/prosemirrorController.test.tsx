@@ -1,5 +1,5 @@
 import { act, fireEvent, render } from '@testing-library/react';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Selection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import type { EditorDocument } from './model';
@@ -10,13 +10,23 @@ import { BlockType } from './types';
 // ProseMirror scrolls the selection into view after a transaction, which needs
 // client rects jsdom does not implement.
 const emptyClientRects = () => [] as unknown as DOMRectList;
+const emptyClientRect = () =>
+  ({ top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }) as DOMRect;
 beforeAll(() => {
   Element.prototype.getClientRects ??= emptyClientRects;
   (Text.prototype as unknown as Element).getClientRects ??= emptyClientRects;
+  (Range.prototype as unknown as Element).getClientRects ??= emptyClientRects;
+  (Range.prototype as unknown as Element).getBoundingClientRect ??= emptyClientRect;
 });
 
 const doc = (...texts: string[]): EditorDocument =>
   texts.map((text) => ({ type: BlockType.Paragraph, children: [{ text }] }));
+
+const beforeinput = (el: HTMLElement, inputType: string) => {
+  const event = new Event('beforeinput', { bubbles: true, cancelable: true });
+  Object.assign(event, { inputType });
+  fireEvent(el, event);
+};
 
 const mount = (initial: EditorDocument = doc('')) => {
   const controller = new ProseMirrorEditorController(initial);
@@ -257,5 +267,79 @@ describe('ProseMirrorEditorController clear', () => {
 
     expect(editable).toBe(document.activeElement);
     expect(editable).toHaveAttribute('data-placeholder-visible', 'true');
+  });
+});
+
+describe('Android backspace fallback', () => {
+  const originalUserAgent = navigator.userAgent;
+
+  const setAndroid = (android: boolean) => {
+    Object.defineProperty(navigator, 'userAgent', {
+      configurable: true,
+      value: android
+        ? 'Mozilla/5.0 (Linux; Android 14; Pixel 8) Mobile Safari/537.36'
+        : originalUserAgent,
+    });
+  };
+
+  afterEach(() => {
+    setAndroid(false);
+    vi.useRealTimers();
+  });
+
+  it('deletes backward via the state when the IME leaves the DOM untouched, without blurring', () => {
+    setAndroid(true);
+    vi.useFakeTimers();
+    const { caretToEnd, controller, editable } = mount(doc('hi'));
+    caretToEnd();
+    editable.focus();
+    const onBlur = vi.fn<() => void>();
+    editable.addEventListener('blur', onBlur);
+
+    beforeinput(editable, 'deleteContentBackward');
+    act(() => vi.advanceTimersByTime(50));
+
+    expect(controller.getDocument()).toEqual(doc('h'));
+    expect(onBlur).not.toHaveBeenCalled();
+  });
+
+  it('leaves the deletion to the observer once the state already changed', () => {
+    setAndroid(true);
+    vi.useFakeTimers();
+    const { caretToEnd, controller, editable, view } = mount(doc('hi'));
+    caretToEnd();
+
+    beforeinput(editable, 'deleteContentBackward');
+    // The IME deleted in the DOM and the observer applied it first.
+    act(() => {
+      const from = view.state.selection.from;
+      view.dispatch(view.state.tr.delete(from - 1, from));
+      vi.advanceTimersByTime(50);
+    });
+
+    expect(controller.getDocument()).toEqual(doc('h'));
+  });
+
+  it('does not intercept Android input other than backward deletes', () => {
+    setAndroid(true);
+    vi.useFakeTimers();
+    const { caretToEnd, controller, editable } = mount(doc('hi'));
+    caretToEnd();
+
+    beforeinput(editable, 'insertText');
+    act(() => vi.advanceTimersByTime(50));
+
+    expect(controller.getDocument()).toEqual(doc('hi'));
+  });
+
+  it('leaves non-Android devices to the built-in handler', () => {
+    vi.useFakeTimers();
+    const { caretToEnd, controller, editable } = mount(doc('hi'));
+    caretToEnd();
+
+    beforeinput(editable, 'deleteContentBackward');
+    act(() => vi.advanceTimersByTime(50));
+
+    expect(controller.getDocument()).toEqual(doc('hi'));
   });
 });

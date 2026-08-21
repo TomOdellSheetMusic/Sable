@@ -62,7 +62,7 @@ export function useGifSearch(
   const clientConfig = useClientConfig();
   const klipyApiKey = clientConfig.gifs?.klipyApiKey ?? '';
   const requestGenerationRef = useRef(0);
-  const abortControllerRef = useRef<AbortController>();
+  const abortControllerRef = useRef<AbortController | undefined>(undefined);
   const mountedRef = useRef(true);
   const showGifPickerRef = useRef(showGifPicker);
   showGifPickerRef.current = showGifPicker;

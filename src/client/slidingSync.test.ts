@@ -459,6 +459,7 @@ describe('SlidingSyncManager initial request', () => {
     const room = {
       getMember: vi.fn<() => undefined>(),
       currentState: { setStateEvents: vi.fn<() => void>() },
+      getLiveTimeline: () => ({ getEvents: () => [] }),
     };
     const manager = makeManager(
       makeMockMx({

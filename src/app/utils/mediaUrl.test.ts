@@ -24,8 +24,8 @@ vi.mock('./mediaTransport', () => ({
 }));
 
 import {
+  addMediaRetryRevision,
   addTauriMediaRetryRevision,
-  getTauriMediaSourceUrl,
   getTauriMediaRetryTarget,
   prepareLoopbackImageSource,
   prepareLoopbackMedia,
@@ -202,6 +202,50 @@ describe('addTauriMediaRetryRevision', () => {
   });
 });
 
+describe('addMediaRetryRevision', () => {
+  const WEB_URL =
+    'https://matrix.example.com/_matrix/client/v1/media/thumbnail/example.com/abc123?width=96';
+  const WRAPPED = `sable-media://${WEB_URL}?__sable_media_cache=3&__sable_media_session=session_abc`;
+
+  it('is a no-op for the first attempt on either platform', () => {
+    hoistedIsTauri.mockReturnValue(false);
+    expect(addMediaRetryRevision(WEB_URL, 0)).toBe(WEB_URL);
+    hoistedIsTauri.mockReturnValue(true);
+    expect(addMediaRetryRevision(WRAPPED, 0)).toBe(WRAPPED);
+  });
+
+  // An identical src is never re-requested by the browser, so without this the retry
+  // fires no second load, no second error event, and the broken image sticks.
+  it('changes the requested url outside Tauri so the retry actually re-requests', () => {
+    hoistedIsTauri.mockReturnValue(false);
+    const revised = addMediaRetryRevision(WEB_URL, 1);
+
+    expect(revised).not.toBe(WEB_URL);
+    const parsed = new URL(revised);
+    expect(parsed.searchParams.get('__sable_media_retry')).toBe('1');
+    expect(parsed.searchParams.get('width')).toBe('96');
+    expect(parsed.pathname).toBe('/_matrix/client/v1/media/thumbnail/example.com/abc123');
+  });
+
+  it('replaces the revision outside Tauri instead of stacking parameters', () => {
+    hoistedIsTauri.mockReturnValue(false);
+    const second = addMediaRetryRevision(addMediaRetryRevision(WEB_URL, 1), 2);
+    expect(second).toBe(addMediaRetryRevision(WEB_URL, 2));
+    expect(new URL(second).searchParams.getAll('__sable_media_retry')).toEqual(['2']);
+  });
+
+  it('leaves non-http(s) sources alone outside Tauri', () => {
+    hoistedIsTauri.mockReturnValue(false);
+    const blob = 'blob:https://app.local/0000-1111';
+    expect(addMediaRetryRevision(blob, 1)).toBe(blob);
+  });
+
+  it('delegates to the Tauri fragment encoding inside Tauri', () => {
+    hoistedIsTauri.mockReturnValue(true);
+    expect(addMediaRetryRevision(WRAPPED, 1)).toBe(addTauriMediaRetryRevision(WRAPPED, 1));
+  });
+});
+
 describe('getTauriMediaRetryTarget', () => {
   const WRAPPED =
     'sable-media://https://matrix.example.com/_matrix/client/v1/media/download/example.com/abc123?__sable_media_cache=3&__sable_media_session=session_abc';
@@ -227,20 +271,6 @@ describe('getTauriMediaRetryTarget', () => {
       expect(getTauriMediaRetryTarget(url, 1)).toBe(`${INNER}#__sable_media_retry=1`);
     }
   );
-});
-
-describe('getTauriMediaSourceUrl', () => {
-  it('unwraps the Android protocol URL to its Matrix media source', () => {
-    const source = 'https://matrix.example.com/_matrix/client/v1/media/download/example.com/abc123';
-    const url = `https://sable-media.localhost/${encodeURIComponent(source)}?__sable_media_cache=3`;
-
-    expect(getTauriMediaSourceUrl(url)).toBe(source);
-  });
-
-  it('passes ordinary URLs through unchanged', () => {
-    const url = 'https://example.org/image.png';
-    expect(getTauriMediaSourceUrl(url)).toBe(url);
-  });
 });
 
 describe('prepareLoopbackMedia', () => {

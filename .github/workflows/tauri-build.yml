@@ -444,7 +444,7 @@ jobs:
         run: gh release upload "$TAG" latest.json --clobber
 
       - name: Remove superseded nightly assets
-        if: ${{ needs.setup-release.outputs.nightly == 'true' && steps.manifest.outputs.produced == 'true' }}
+        if: ${{ needs.setup-release.outputs.nightly == 'true' && needs.android.result == 'success' && steps.manifest.outputs.produced == 'true' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

@@ -57,6 +57,17 @@ describe('android edge-to-edge inset contract', () => {
     expect(sheet.match(/zIndex,/g)).toHaveLength(2);
   });
 
+  it('falls back to the injected edge-to-edge inset before env() for the mobile sheet', () => {
+    const messageStyles = readWorkspaceFile('src/app/features/room/message/styles.css.ts');
+
+    expect(messageStyles).toContain(
+      "'var(--mobile-sheet-safe-bottom, var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))'"
+    );
+    expect(messageStyles).not.toContain(
+      "'var(--mobile-sheet-safe-bottom, env(safe-area-inset-bottom, 0px))'"
+    );
+  });
+
   it('uses the App shell as the only safe-area owner', () => {
     const appShell = readWorkspaceFile('src/app/components/app-shell/AppShell.tsx');
     const systemBarShell = readWorkspaceFile('src/app/components/app-shell/SystemBarShell.tsx');
@@ -86,7 +97,7 @@ describe('android edge-to-edge inset contract', () => {
 
     expect(indexCss).toContain('@media (display-mode: standalone)');
     expect(indexCss).toContain('@supports (-webkit-touch-callout: none)');
-    expect(indexCss).toContain('var(--sable-ios-pwa-viewport-height, 100vh)');
+    expect(indexCss).toContain('var(--sable-ios-pwa-viewport-height, 100dvh)');
     expect(indexTsx).toContain('installIosPwaViewportHeight();');
     expect(iosPwaViewport).toContain("window.matchMedia('(display-mode: standalone)').matches");
     expect(iosPwaViewport).toContain('viewport.height + viewport.offsetTop');

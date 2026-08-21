@@ -1423,6 +1423,51 @@ describe('RoomInput submit regressions', () => {
     expect(screen.getByRole('button', { name: 'Open emoji board' })).toBeInTheDocument();
   });
 
+  it('blurs the editor when opening the emoji board on mobile to dismiss the keyboard', () => {
+    testState.isMobile = true;
+    testState.editorTriggerButtons = true;
+    render(<RoomInputHarness />);
+    const editor = screen.getByTestId('room-input-editor');
+    editor.focus();
+    expect(document.activeElement).toBe(editor);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open emoji board' }));
+
+    expect(document.activeElement).not.toBe(editor);
+  });
+
+  it('blurs the editor when opening the attachment sheet on mobile to dismiss the keyboard', () => {
+    testState.isMobile = true;
+    render(<RoomInputHarness />);
+    const editor = screen.getByTestId('room-input-editor');
+    editor.focus();
+    expect(document.activeElement).toBe(editor);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add new Item' }));
+
+    expect(document.activeElement).not.toBe(editor);
+  });
+
+  it('does not refocus the editor when the emoji sheet closes on mobile', () => {
+    testState.isMobile = true;
+    testState.editorTriggerButtons = true;
+    render(<RoomInputHarness />);
+    const editor = screen.getByTestId('room-input-editor');
+    editor.focus();
+
+    const activeElement = vi
+      .spyOn(Object.getPrototypeOf(document), 'activeElement', 'get')
+      .mockReturnValue(editor);
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Open emoji board' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Open emoji board' }));
+    } finally {
+      activeElement.mockRestore();
+    }
+
+    expect(document.activeElement).not.toBe(editor);
+  });
+
   it('keeps an unsent draft across a composer remount', async () => {
     const input = render(<RoomInputHarness />);
     render(<DraftObserver />);

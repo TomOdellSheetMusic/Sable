@@ -467,6 +467,8 @@ pub fn run() {
             #[cfg(target_os = "android")]
             mobile::set_navigation_bar_color,
             #[cfg(target_os = "android")]
+            mobile::set_window_background_color,
+            #[cfg(target_os = "android")]
             mobile::set_immersive_mode,
             #[cfg(target_os = "android")]
             mobile::start_call_foreground_service,
@@ -484,6 +486,8 @@ pub fn run() {
             ios::deactivate_call_audio_session,
             #[cfg(desktop)]
             desktop::download::save_download,
+            #[cfg(desktop)]
+            desktop::download::save_media_download,
             #[cfg(desktop)]
             desktop::diagnostics::export_diagnostics,
             #[cfg(any(target_os = "android", target_os = "ios"))]

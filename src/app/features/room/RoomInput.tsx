@@ -295,7 +295,7 @@ interface SendContentsOptions {
 
 interface RoomInputProps {
   editor: ProseMirrorEditorController;
-  fileDropContainerRef: RefObject<HTMLElement>;
+  fileDropContainerRef: RefObject<HTMLElement | null>;
   roomId: string;
   room: Room;
   threadRootId?: string;
@@ -383,7 +383,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const [ingestingFiles, setIngestingFiles] = useState(false);
     const fileIngestionCountRef = useRef(0);
     const submissionInFlightRef = useRef(false);
-    const composerControllerRef = useRef<ComposerController>();
+    const composerControllerRef = useRef<ComposerController | undefined>(undefined);
     composerControllerRef.current ??= createComposerController();
     // Bumped when this composer goes away, so async work started for a previous
     // room/thread stops writing to the current one.
@@ -400,7 +400,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       roomUploadAtomFamily,
       selectedFiles.map((f) => f.file)
     );
-    const uploadBoardHandlers = useRef<UploadBoardImperativeHandlers>();
+    const uploadBoardHandlers = useRef<UploadBoardImperativeHandlers | undefined>(undefined);
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const isLongPress = useRef(false);
     const sentOnPointerUpRef = useRef(false);
@@ -433,8 +433,8 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const audioRecorderRef = useRef<AudioMessageRecorderHandle>(null);
     const micHoldStartRef = useRef(0);
     const micHoldReleaseRef = useRef<(() => void) | null>(null);
-    const recorderActionRef = useRef<'stop' | 'cancel'>();
-    const recorderTimerRef = useRef<ReturnType<typeof setTimeout>>();
+    const recorderActionRef = useRef<'stop' | 'cancel' | undefined>(undefined);
+    const recorderTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const scheduleRecorderTimer = useCallback((callback: () => void) => {
       recorderTimerRef.current = setTimeout(() => {
         recorderTimerRef.current = undefined;
@@ -678,6 +678,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const [AddMenuAnchor, setAddMenuAnchor] = useState<RectCords>();
     const [showAttachmentSheet, setShowAttachmentSheet] = useState(false);
     const attachmentSkipReturnFocusRef = useRef(false);
+    const emojiBoardSkipReturnFocusRef = useRef(true);
     const [showPollPicker, setShowPollPicker] = useState(false);
     const [showLocationPicker, setShowLocationPicker] = useState(false);
     const [scheduleMenuAnchor, setScheduleMenuAnchor] = useState<RectCords>();
@@ -685,7 +686,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     const [silentReply, setSilentReply] = useState(!mentionInReplies);
     // Clears the reply draft up front so it cannot be re-sent, keeping a snapshot to
     // restore if the send never lands.
-    const claimedReplyEventIdRef = useRef<string | undefined>();
+    const claimedReplyEventIdRef = useRef<string | undefined>(undefined);
     const claimReply = useCallback((): ReplyClaim | undefined => {
       const currentReply = replyDraftRef.current;
       if (!currentReply) return undefined;
@@ -722,7 +723,13 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     }, []);
     const toggleEmojiBoardTab = useCallback((tab: EmojiBoardTab) => {
       setEmojiBoardTab((prev) => {
-        if (prev !== tab) return tab;
+        if (prev !== tab) {
+          if (prev === undefined && isMobileOrTablet()) {
+            const activeElement = document.activeElement;
+            if (activeElement instanceof HTMLElement) activeElement.blur();
+          }
+          return tab;
+        }
         if (isMobileOrTablet()) {
           const activeElement = document.activeElement;
           if (activeElement instanceof HTMLElement) activeElement.blur();
@@ -764,7 +771,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     }, [threadRootId, setReplyDraft, mx]);
 
     // Rewritten with equal content on unmount, and appending it again would duplicate it.
-    const appliedDraftRef = useRef<string>();
+    const appliedDraftRef = useRef<string | undefined>(undefined);
     useEffect(() => {
       const draft = JSON.stringify(msgDraft);
       if (appliedDraftRef.current === draft) return;
@@ -773,7 +780,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
     }, [editor, msgDraft]);
 
     const editingStateRef = useRef(false);
-    const preEditDraftRef = useRef<EditorDocument>();
+    const preEditDraftRef = useRef<EditorDocument | undefined>(undefined);
     useEffect(
       () => () => {
         if (editingStateRef.current) {
@@ -806,7 +813,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
       [room]
     );
 
-    const prevEditingEventId = useRef<string>();
+    const prevEditingEventId = useRef<string | undefined>(undefined);
     useEffect(() => {
       if (!isMobile) {
         editingStateRef.current = false;
@@ -1498,6 +1505,10 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
         }
         if (outgoing.kind === 'gifSearch') {
           restoreReplyClaim(submission.replyClaim);
+          if (isMobileOrTablet()) {
+            const activeElement = document.activeElement;
+            if (activeElement instanceof HTMLElement) activeElement.blur();
+          }
           setInitialGifSearch(outgoing.query);
           setEmojiBoardTab(EmojiBoardTab.Gif);
           return;
@@ -2215,7 +2226,9 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                 <>
                   <IconButton
                     onClick={() => {
-                      attachmentSkipReturnFocusRef.current = false;
+                      attachmentSkipReturnFocusRef.current = true;
+                      const activeElement = document.activeElement;
+                      if (activeElement instanceof HTMLElement) activeElement.blur();
                       setShowAttachmentSheet(true);
                     }}
                     onPointerDown={suppressEditorRefocus}
@@ -2442,6 +2455,7 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                             dialogLabel="Emoji picker"
                             sheetClassName={messageCss.MessageMobileOptionsContainerPicker}
                             keyboardAware
+                            skipReturnFocusRef={emojiBoardSkipReturnFocusRef}
                           >
                             {() => emojiBoard}
                           </MobileSwipeDownModal>
@@ -2457,7 +2471,10 @@ export const RoomInput = forwardRef<HTMLDivElement, RoomInputProps>(
                       align="End"
                       anchor={(() => {
                         if (emojiBoardTab === undefined) return undefined;
-                        const buttonRefs: Record<EditorButtonId, RefObject<HTMLButtonElement>> = {
+                        const buttonRefs: Record<
+                          EditorButtonId,
+                          RefObject<HTMLButtonElement | null>
+                        > = {
                           gif: gifBtnRef,
                           sticker: stickerBtnRef,
                           emoji: emojiBtnRef,

@@ -320,8 +320,8 @@ importers:
         specifier: ^14.6.3
         version: 14.6.5(@testing-library/dom@10.4.1)
       '@tomodellsheetmusic/sable-call-embedded':
-        specifier: 1.2.0
-        version: 1.2.0
+        specifier: 1.2.1
+        version: 1.2.1
       '@types/chroma-js':
         specifier: ^3.1.2
         version: 3.1.2
@@ -2624,8 +2624,8 @@ packages:
     peerDependencies:
       '@testing-library/dom': '>=7.21.4'
 
-  '@tomodellsheetmusic/sable-call-embedded@1.2.0':
-    resolution: {integrity: sha512-TAUvW/MaLaiAe/wpqOsrVE/jRQjjOxQ9fGtq3GT7bb2de7PjIpuLUsNeDgDM4E0FX/iW8pMqXXH7GmFZ1jvE/A==}
+  '@tomodellsheetmusic/sable-call-embedded@1.2.1':
+    resolution: {integrity: sha512-gSz/y8uU2+6u/yaSr76UYcdyfewLhnA9G5OAuIhiUnoYEg+r1GvQpSPMiYsHnSxs3oq0RqwgVpnk42NSYzGY0w==}
 
   '@trickfilm400/rollup-plugin-off-main-thread@3.0.0-pre1':
     resolution: {integrity: sha512-/67zpWDBLV+oYAEL682s1ktXL0HgqX76f6gaVGkGnVZlBbm1zd0v4Bz8MFF2GGhoX9rvfq3KSQHubFHwa6w6/Q==}
@@ -7362,7 +7362,7 @@ snapshots:
     dependencies:
       '@testing-library/dom': 10.4.1
 
-  '@tomodellsheetmusic/sable-call-embedded@1.2.0': {}
+  '@tomodellsheetmusic/sable-call-embedded@1.2.1': {}
 
   '@trickfilm400/rollup-plugin-off-main-thread@3.0.0-pre1':
     dependencies:

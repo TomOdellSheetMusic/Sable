@@ -73,11 +73,14 @@ const isReleaseTag = (() => {
 
 const baseProductName = typeof appConfig.productName === 'string' ? appConfig.productName : 'Sable';
 
+const sableCallDistPrefix = 'node_modules/@tomodellsheetmusic/sable-call-embedded/dist';
+
 const copyFiles = {
   targets: [
     {
-      src: 'node_modules/@tomodellsheetmusic/sable-call-embedded/dist/*',
+      src: `${sableCallDistPrefix}/**/*`,
       dest: 'public/element-call',
+      rename: { stripBase: sableCallDistPrefix.split('/').length },
     },
     {
       src: 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
@@ -95,19 +98,23 @@ const copyFiles = {
     },
     {
       src: 'public/res/logo-maskable',
-      dest: 'public/',
+      dest: 'public',
+      rename: { stripBase: 1 },
     },
     {
       src: 'public/res/logo',
-      dest: 'public/',
+      dest: 'public',
+      rename: { stripBase: 1 },
     },
     {
       src: 'public/res/svg',
-      dest: 'public/',
+      dest: 'public',
+      rename: { stripBase: 1 },
     },
     {
       src: 'public/locales',
-      dest: 'public/',
+      dest: 'public',
+      rename: { stripBase: 1 },
     },
     {
       src: 'wrangler.json',

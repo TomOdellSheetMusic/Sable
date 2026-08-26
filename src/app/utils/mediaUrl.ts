@@ -1,5 +1,6 @@
 import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
 import type { MatrixClient } from '$types/matrix-sdk';
+import { webviewStripsCustomProtocolCache } from './platform';
 import { getCurrentMediaSessionScope } from './mediaTransport';
 import { getTauriMediaSourceUrl } from './mediaSourceUrl';
 
@@ -75,10 +76,7 @@ export const addTauriMediaRetryRevision = (mediaUrl: string, revision: number): 
   return rewriteAuthenticatedMediaUrl(target) ?? mediaUrl;
 };
 
-// Outside Tauri the revision rides as a query parameter. The media endpoints ignore it, but
-// it makes the URL the browser requests distinct, which is the whole point of a retry: an
-// identical `src` is never re-requested, so no second error event ever fires and a broken
-// image sticks around instead of falling back.
+// Without it the retried `src` is identical, so the browser never re-requests.
 const addWebMediaRetryRevision = (mediaUrl: string, revision: number): string => {
   let parsedUrl: URL;
   try {
@@ -109,6 +107,7 @@ export const prepareLoopbackMedia = async (source: string): Promise<string> => {
 // renders from the custom protocol too, so a loopback failure costs caching, not the image.
 export const prepareLoopbackImageSource = async (source: string): Promise<string> => {
   if (!isTauri()) return source;
+  if (!webviewStripsCustomProtocolCache()) return rewriteAuthenticatedMediaUrl(source) ?? source;
   try {
     return await prepareLoopbackMedia(source);
   } catch {

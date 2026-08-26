@@ -121,8 +121,6 @@ describe('swMediaAuth', () => {
     controllerChange?.();
 
     expect(controllerChange).toBeTypeOf('function');
-    // A speculative `false` here would flip every mounted media consumer to the blob
-    // path and back once the probe answers, blinking every avatar on screen.
     expect(listener).not.toHaveBeenCalled();
     expect(replacement.postMessage).toHaveBeenCalledOnce();
     expect(mod.getCachedSWMediaAuthSupport()).toBeUndefined();

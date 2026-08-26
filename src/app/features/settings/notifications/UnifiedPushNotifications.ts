@@ -1,5 +1,4 @@
 import {
-  type CryptoBackend,
   type IPusherRequest,
   type MatrixClient,
   MatrixEvent,
@@ -23,6 +22,7 @@ import {
   parseUnifiedPushMessage,
 } from './UnifiedPushMessageListener';
 import { addPluginListener, invoke } from '@tauri-apps/api/core';
+import { getSlidingSyncManager } from '$client/initMatrix';
 import type { PushTransportConfig } from './NotificationTransport';
 import { getTauriNotificationsApi, isMobileTauri } from './TauriNotificationsApiClient';
 import {
@@ -356,8 +356,8 @@ async function resolvePreviewEvent(
   try {
     const evt = await mx.fetchRoomEvent(roomId, eventId);
     const mEvent = new MatrixEvent(evt);
-    if (mEvent.isEncrypted() && mx.getCrypto()) {
-      await mEvent.attemptDecryption(mx.getCrypto() as CryptoBackend);
+    if (mEvent.isEncrypted()) {
+      await mx.decryptEventIfNeeded(mEvent);
     }
     return mEvent;
   } catch (error) {
@@ -818,7 +818,7 @@ function scheduleEncryptedPreviewEnrichment(
   };
 
   whenDecrypted(decrypted, applyDecryptedPreview);
-  void decrypted.attemptDecryption(crypto as CryptoBackend).catch(() => {
+  void initialSettings.mx.decryptEventIfNeeded(decrypted).catch(() => {
     unifiedPushLog.warn('notification', 'Encrypted preview decryption failed');
   });
 }
@@ -1063,7 +1063,9 @@ export async function listenForUnifiedPushMessages(getSettings: () => Notificati
 
   const listener = await addPluginListener('notifications', 'push-message', (data: unknown) => {
     const notification = parseUnifiedPushMessage(data);
-    if (notification) dispatch(notification);
+    if (!notification) return;
+    getSlidingSyncManager(getSettings().mx)?.resumeForPush();
+    dispatch(notification);
   });
 
   try {

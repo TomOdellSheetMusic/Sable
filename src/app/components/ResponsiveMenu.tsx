@@ -16,6 +16,7 @@ type FocusTrapOptions = NonNullable<ComponentProps<typeof FocusTrap>['focusTrapO
 
 type ResponsiveMenuProps = {
   anchor: RectCords | undefined;
+  open?: boolean;
   requestClose: () => void;
   menu: ReactNode;
   /** The element the menu hangs off on desktop. */
@@ -135,6 +136,7 @@ function InlineMenuDialog({
  */
 export function ResponsiveMenu({
   anchor,
+  open,
   requestClose,
   menu,
   children,
@@ -149,6 +151,7 @@ export function ResponsiveMenu({
   overlayDragHandle = false,
 }: ResponsiveMenuProps) {
   const isMobile = useCompactLayout();
+  const isOpen = open ?? !!anchor;
 
   const isKeyForward = (evt: KeyboardEvent) =>
     evt.key === 'ArrowDown' || (arrowNavigation === 'both' && evt.key === 'ArrowRight');
@@ -172,7 +175,7 @@ export function ResponsiveMenu({
       return (
         <>
           {children}
-          {anchor && (
+          {isOpen && anchor && (
             <InlineMenuDialog
               anchor={anchor}
               requestClose={requestClose}
@@ -192,12 +195,12 @@ export function ResponsiveMenu({
     return (
       <>
         {children}
-        {anchor && mobile === 'dialog' && (
+        {isOpen && mobile === 'dialog' && (
           <MenuDialog requestClose={requestClose} focusTrapOptions={focusTrapOptions}>
             {menu}
           </MenuDialog>
         )}
-        {anchor && mobile === 'sheet' && (
+        {isOpen && mobile === 'sheet' && (
           <MobileSwipeDownModal
             requestClose={requestClose}
             sheetStyle={sheetStyle}

@@ -826,12 +826,21 @@ export function RoomTimeline({
     prevBackwardStatusRef.current = timelineSync.backwardStatus;
     if (timelineSync.backwardStatus === 'loading') {
       wasAtBottomBeforePaginationRef.current = atBottomRef.current;
-    } else if (prev === 'loading' && timelineSync.backwardStatus === 'idle') {
+    } else if (
+      prev === 'loading' &&
+      timelineSync.backwardStatus === 'idle' &&
+      !timelineSync.backwardError
+    ) {
       if (scrollOwnerRef.current === 'event' && scrollAnchorRef.current !== undefined) {
         restoreScrollAnchor();
       } else if (wasAtBottomBeforePaginationRef.current) scrollToBottom();
     }
-  }, [timelineSync.backwardStatus, restoreScrollAnchor, scrollToBottom]);
+  }, [
+    timelineSync.backwardStatus,
+    timelineSync.backwardError,
+    restoreScrollAnchor,
+    scrollToBottom,
+  ]);
 
   useEffect(() => {
     if (!timelineSync.focusItem?.scrollTo || !vListRef.current) return;
@@ -1247,8 +1256,7 @@ export function RoomTimeline({
 
   // A failed backfill keeps its pagination token, so the placeholder condition
   // would otherwise hold forever and never reach the error and its Retry.
-  const showEmptyPaginationError =
-    timelineSync.eventsLength === 0 && timelineSync.backwardStatus === 'error';
+  const showEmptyPaginationError = timelineSync.eventsLength === 0 && timelineSync.backwardError;
 
   const showLoadingPlaceholders =
     timelineSync.eventsLength === 0 &&
@@ -1256,8 +1264,12 @@ export function RoomTimeline({
     (!isReady || timelineSync.canPaginateBack || timelineSync.backwardStatus === 'loading');
 
   let backPaginationJSX: ReactNode | undefined;
-  if (timelineSync.canPaginateBack || timelineSync.backwardStatus !== 'idle') {
-    if (timelineSync.backwardStatus === 'error') {
+  if (
+    timelineSync.canPaginateBack ||
+    timelineSync.backwardStatus !== 'idle' ||
+    timelineSync.backwardError
+  ) {
+    if (timelineSync.backwardError) {
       backPaginationJSX = (
         <Box
           justifyContent="Center"
@@ -1282,8 +1294,12 @@ export function RoomTimeline({
   }
 
   let frontPaginationJSX: ReactNode | undefined;
-  if (!timelineSync.liveTimelineLinked || timelineSync.forwardStatus !== 'idle') {
-    if (timelineSync.forwardStatus === 'error') {
+  if (
+    !timelineSync.liveTimelineLinked ||
+    timelineSync.forwardStatus !== 'idle' ||
+    timelineSync.forwardError
+  ) {
+    if (timelineSync.forwardError) {
       frontPaginationJSX = (
         <Box
           justifyContent="Center"

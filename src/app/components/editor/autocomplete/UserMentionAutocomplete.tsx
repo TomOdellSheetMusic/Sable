@@ -8,7 +8,6 @@ import { useRoomMembers } from '$hooks/useRoomMembers';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import type { SearchItemStrGetter, UseAsyncSearchOptions } from '$hooks/useAsyncSearch';
 import { useAsyncSearch } from '$hooks/useAsyncSearch';
-import { normalize } from '$utils/AsyncSearch';
 import { onTabPress } from '$utils/keyboard';
 import { useKeyDown } from '$hooks/useKeyDown';
 import { getMxIdLocalPart, isUserId } from '$utils/matrix';
@@ -120,8 +119,7 @@ export function UserMentionAutocomplete({
     getRoomMemberStr,
     SEARCH_OPTIONS
   );
-  const matchingResult = result?.query === normalize(query.text) ? result.items : undefined;
-  const autoCompleteMembers = matchingResult ?? mentionableMembers.slice(0, MAX_MENTION_RESULTS);
+  const autoCompleteMembers = result?.items ?? mentionableMembers.slice(0, MAX_MENTION_RESULTS);
   const directoryMatches = useMemo(() => {
     const memberIds = new Set(autoCompleteMembers.map((member) => member.userId));
     return directoryResults

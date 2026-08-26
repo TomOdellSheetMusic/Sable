@@ -3,11 +3,18 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ImageContent } from './ImageContent';
 import { downloadEncryptedMedia, mxcUrlToHttp } from '$utils/matrix';
+import type * as PlatformModule from '$utils/platform';
 
 const screenMocks = vi.hoisted(() => ({
   isMobile: true,
   tauri: false,
   loopbackUrl: undefined as string | undefined,
+  stripsCache: true,
+}));
+
+vi.mock('$utils/platform', async (importOriginal) => ({
+  ...(await importOriginal<typeof PlatformModule>()),
+  webviewStripsCustomProtocolCache: () => screenMocks.stripsCache,
 }));
 vi.mock('$hooks/useScreenSize', () => ({
   ScreenSize: { Desktop: 'Desktop', Tablet: 'Tablet', Mobile: 'Mobile' },
@@ -232,6 +239,35 @@ describe('ImageContent', () => {
       expect(Array.from(new Set(srcs))).toEqual(['http://127.0.0.1:45678/capability']);
     } finally {
       screenMocks.tauri = false;
+      screenMocks.loopbackUrl = undefined;
+    }
+  });
+
+  it('loads a Tauri image from the custom protocol where its cache headers survive', async () => {
+    screenMocks.tauri = true;
+    screenMocks.stripsCache = false;
+    screenMocks.loopbackUrl = 'http://127.0.0.1:45678/capability';
+    try {
+      const srcs: string[] = [];
+      render(
+        <ImageContent
+          url="mxc://example.org/abc123"
+          renderImage={(props) => {
+            srcs.push(props.src);
+            return <img alt="preview" src={props.src} onError={props.onError} />;
+          }}
+          renderViewer={() => <div>viewer</div>}
+        />
+      );
+
+      touchTap(screen.getByRole('button', { name: 'View' }));
+      await screen.findByAltText('preview');
+
+      await waitFor(() => expect(srcs.length).toBeGreaterThan(0));
+      expect(Array.from(new Set(srcs))).toEqual([SABLE_MEDIA_URL]);
+    } finally {
+      screenMocks.tauri = false;
+      screenMocks.stripsCache = true;
       screenMocks.loopbackUrl = undefined;
     }
   });

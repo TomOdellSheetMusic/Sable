@@ -110,6 +110,12 @@ describe('android edge-to-edge inset contract', () => {
     expect(iosPwaViewport).toContain('isEditableFocused');
   });
 
+  it('lets the android keyboard shrink the layout viewport', () => {
+    const indexHtml = readWorkspaceFile('index.html');
+
+    expect(indexHtml).toContain('interactive-widget=resizes-content');
+  });
+
   it('removes the scattered safe-area css consumers', () => {
     const indexCss = readWorkspaceFile('src/index.css');
     const pageStyles = readWorkspaceFile('src/app/components/page/style.css.ts');

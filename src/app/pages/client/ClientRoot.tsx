@@ -25,7 +25,6 @@ import { MatrixClientProvider } from '$hooks/useMatrixClient';
 import { AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
 import { useSyncState } from '$hooks/useSyncState';
 import { useCrossSigningResetDetect } from '$hooks/useCrossSigningResetDetect';
-import { useDeviceDisplayName } from '$hooks/useDeviceDisplayName';
 import { useMatrixEvent } from '$hooks/useMatrixEvent';
 import { stopPropagation } from '$utils/keyboard';
 import { AuthMetadataProvider, getSessionAuthMetadata } from '$hooks/useAuthMetadata';
@@ -40,6 +39,7 @@ import { createLogger } from '$utils/debug';
 import { useSyncNicknames } from '$hooks/useNickname';
 import { useAppVisibility } from '$hooks/useAppVisibility';
 import { useNetworkRecovery } from '$hooks/useNetworkRecovery';
+import { useLoopbackMediaRecovery } from '$hooks/useLoopbackMediaRecovery';
 import { useBackgroundSyncPause } from '$hooks/useBackgroundSyncPause';
 import { composerIcon, DotsThreeOutlineVerticalIcon } from '$components/icons/phosphor';
 import { getHomePath } from '$pages/pathUtils';
@@ -348,8 +348,8 @@ export function ClientRoot({ children }: ClientRootProps) {
   useAppVisibility(mx);
   useNetworkRecovery(mx);
   useBackgroundSyncPause(mx);
+  useLoopbackMediaRecovery();
   useCrossSigningResetDetect(mx);
-  useDeviceDisplayName(mx);
 
   useEffect(
     () => () => {

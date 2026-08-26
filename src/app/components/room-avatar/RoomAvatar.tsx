@@ -25,8 +25,7 @@ type RoomAvatarProps = {
 };
 
 export function RoomAvatar({ roomId, src, alt, renderFallback, uniformIcons }: RoomAvatarProps) {
-  // Mirrors the crossOrigin AvatarImage puts on the rendered element.
-  const { mediaSrc, error, onError } = useAvatarMediaSource(src, { crossOrigin: 'anonymous' });
+  const { mediaSrc, error, onError } = useAvatarMediaSource(src);
 
   if (!mediaSrc || error) {
     return (

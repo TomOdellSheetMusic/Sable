@@ -109,6 +109,77 @@ describe('useRoomMembers', () => {
     expect(hydrateAllRoomMembers).not.toHaveBeenCalled();
   });
 
+  it('keeps the member array identity stable when a sync refill changes nothing', async () => {
+    hydrateAllRoomMembers.mockClear();
+    const roster = [
+      { userId: '@alice:example.org', membership: 'join', powerLevel: 0 },
+    ] as unknown as RoomMember[];
+    const room = {
+      roomId: '!room:example.org',
+      getMembers: () => [...roster],
+      getJoinedMemberCount: () => 1,
+      loadMembersIfNeeded: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    } as unknown as Room;
+    const handlers = new Map<string, () => void>();
+    const mx = {
+      getRoom: () => room,
+      on: vi.fn<(event: string, handler: () => void) => void>((event, handler) => {
+        handlers.set(event, handler);
+      }),
+      removeListener: vi.fn<() => void>(),
+    } as unknown as MatrixClient;
+
+    const { result } = renderHook(() => useRoomMembers(mx, room.roomId));
+    await waitFor(() => expect(result.current).toHaveLength(1));
+    const first = result.current;
+
+    await act(async () => {
+      handlers.get(ClientEvent.Sync)?.();
+      await Promise.resolve();
+    });
+
+    expect(result.current).toBe(first);
+  });
+
+  it('publishes a new member array when the roster changes', async () => {
+    hydrateAllRoomMembers.mockClear();
+    const roster = [
+      { userId: '@alice:example.org', membership: 'join', powerLevel: 0 },
+    ] as unknown as RoomMember[];
+    const room = {
+      roomId: '!room:example.org',
+      getMembers: () => [...roster],
+      getJoinedMemberCount: () => 1,
+      loadMembersIfNeeded: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    } as unknown as Room;
+    const handlers = new Map<string, (event?: MatrixEvent) => void>();
+    const mx = {
+      getRoom: () => room,
+      on: vi.fn<(event: string, handler: (event?: MatrixEvent) => void) => void>(
+        (event, handler) => {
+          handlers.set(event, handler);
+        }
+      ),
+      removeListener: vi.fn<() => void>(),
+    } as unknown as MatrixClient;
+
+    const { result } = renderHook(() => useRoomMembers(mx, room.roomId));
+    await waitFor(() => expect(result.current).toHaveLength(1));
+
+    act(() => {
+      roster.push({
+        userId: '@bob:example.org',
+        membership: 'join',
+        powerLevel: 0,
+      } as unknown as RoomMember);
+      handlers.get(RoomMemberEvent.Membership)?.({
+        getRoomId: () => room.roomId,
+      } as MatrixEvent);
+    });
+
+    expect(result.current).toHaveLength(2);
+  });
+
   it('keeps member updates flowing while the SDK member load is pending', async () => {
     let resolveMemberLoad!: () => void;
     const members: RoomMember[] = [];

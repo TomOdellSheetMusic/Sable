@@ -61,6 +61,52 @@ const slidingSyncByClient = new WeakMap<MatrixClient, SlidingSyncManager>();
 const membershipActionCleanupByClient = new WeakMap<MatrixClient, () => void>();
 const presenceSyncByClient = new WeakMap<MatrixClient, PresenceSyncManager>();
 
+// Two MatrixClients on one crypto store corrupt it, and initRustCrypto leaves it to the
+// application to prevent that, so track which client owns each store.
+const liveClientByCryptoStore = new Map<string, MatrixClient>();
+const cryptoStoreByClient = new WeakMap<MatrixClient, string>();
+
+export const getCryptoStoreOwner = (storeKey: string): MatrixClient | undefined =>
+  liveClientByCryptoStore.get(storeKey);
+
+export const claimCryptoStore = (mx: MatrixClient, storeKey: string): void => {
+  liveClientByCryptoStore.set(storeKey, mx);
+  cryptoStoreByClient.set(mx, storeKey);
+};
+
+export const releaseCryptoStore = (mx: MatrixClient): void => {
+  const storeKey = cryptoStoreByClient.get(mx);
+  if (storeKey === undefined) return;
+  cryptoStoreByClient.delete(mx);
+  // A superseded client must not evict the entry of whichever client replaced it.
+  if (liveClientByCryptoStore.get(storeKey) === mx) liveClientByCryptoStore.delete(storeKey);
+};
+
+const evictPreviousCryptoStoreOwner = (storeKey: string): void => {
+  const previous = liveClientByCryptoStore.get(storeKey);
+  if (!previous) return;
+
+  const wasRunning = previous.clientRunning;
+  const previousSyncState = previous.getSyncState();
+
+  log.warn('initClient: crypto store already owned by a live client — stopping it first');
+  debugLog.warn('sync', 'Duplicate crypto client init — stopping previous owner', {
+    wasRunning,
+    previousSyncState,
+  });
+  Sentry.metrics.count('sable.crypto.duplicate_client', 1, {
+    attributes: { was_running: wasRunning },
+  });
+  // An Error, not a message, so the stack names what re-entered initClient.
+  Sentry.captureException(new Error('Duplicate MatrixClient for one crypto store'), {
+    tags: { area: 'crypto_store_ownership' },
+    extra: { was_running: wasRunning, previous_sync_state: previousSyncState },
+  });
+
+  // stopClient releases the store as part of its teardown.
+  stopClient(previous);
+};
+
 export const ownsActiveMediaSession = (session?: Session): boolean => {
   if (!session) return true;
   const sessions = getLocalStorageItem<Sessions>(MATRIX_SESSIONS_KEY, []);
@@ -117,6 +163,27 @@ const startPresenceAfterInitialSync = (
   };
   presenceStartCleanupByClient.set(mx, cleanup);
   return cleanup;
+};
+
+// The SDK's only check runs inside `initRustCrypto`, before the client starts, and latches off.
+export const recheckKeyBackupAfterInitialSync = (mx: MatrixClient): void => {
+  const recheck = () => {
+    mx.removeListener(ClientEvent.Sync, onSync);
+    const crypto = mx.getCrypto();
+    if (!crypto) return;
+    crypto.checkKeyBackupAndEnable().catch((error: unknown) => {
+      debugLog.warn('sync', 'Failed to re-check key backup after initial sync', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  };
+
+  const onSync = (state: SyncState) => {
+    if (isInitialSyncReady(state)) recheck();
+  };
+
+  if (isInitialSyncReady(mx.getSyncState())) recheck();
+  else mx.on(ClientEvent.Sync, onSync);
 };
 
 type StartupPhase = 'sync_store' | 'rust_crypto' | 'client_init' | 'client_start';
@@ -361,6 +428,7 @@ export const initClient = async (session: Session): Promise<MatrixClient> => {
   const initStartTime = performance.now();
   let initOutcome = 'success';
   try {
+    evictPreviousCryptoStoreOwner(storeName.rustCryptoPrefix);
     const result = await initializeClient(session, storeName.rustCryptoPrefix);
     if (!result.ok) {
       if (!isMismatch(result.error)) {
@@ -382,6 +450,10 @@ export const initClient = async (session: Session): Promise<MatrixClient> => {
     }
 
     result.mx.setMaxListeners(50);
+    claimCryptoStore(result.mx, storeName.rustCryptoPrefix);
+    debugLog.info('sync', 'Matrix client initialised, crypto store claimed', {
+      userId: session.userId,
+    });
     return result.mx;
   } catch (error) {
     initOutcome = 'error';
@@ -531,7 +603,11 @@ export const startClient = async (mx: MatrixClient, config?: StartClientConfig):
     });
   }
 
-  debugLog.info('sync', 'Starting Matrix client', { userId: mx.getUserId() });
+  debugLog.info('sync', 'Starting Matrix client', {
+    userId: mx.getUserId(),
+    transport: useSliding ? 'sliding' : 'classic',
+    alreadyRunning: mx.clientRunning,
+  });
 
   const presenceManager = new PresenceSyncManager(mx);
   presenceSyncByClient.set(mx, presenceManager);
@@ -566,6 +642,7 @@ export const startClient = async (mx: MatrixClient, config?: StartClientConfig):
       { transport: useSliding ? 'sliding' : 'classic' }
     );
     if (!useSliding) installSyncStorePersistence(mx);
+    recheckKeyBackupAfterInitialSync(mx);
     if (manager && (await manager.waitForSidebarCacheHydration())) {
       config?.onCachedRoomsLoaded?.();
     }
@@ -586,7 +663,13 @@ export const startClient = async (mx: MatrixClient, config?: StartClientConfig):
 
 export const stopClient = (mx: MatrixClient): void => {
   log.log('stopClient', mx.getUserId());
-  debugLog.info('sync', 'Stopping client', { userId: mx.getUserId() });
+  // stopClient closes the OlmMachine even when the client never ran, so record it.
+  debugLog.info('sync', 'Stopping client', {
+    userId: mx.getUserId(),
+    wasRunning: mx.clientRunning,
+    syncState: mx.getSyncState(),
+  });
+  releaseCryptoStore(mx);
   slidingSyncRequestCleanupByClient.get(mx)?.();
   disposeSyncStorePersistence(mx);
   disposeSlidingSync(mx);

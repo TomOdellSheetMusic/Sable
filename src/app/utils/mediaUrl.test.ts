@@ -3,6 +3,7 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 
 const hoistedGetSessionScope = vi.hoisted(() => vi.fn<() => string>(() => 'session_abc'));
 const hoistedIsTauri = vi.hoisted(() => vi.fn<() => boolean>(() => false));
+const hoistedStripsCache = vi.hoisted(() => vi.fn<() => boolean>(() => true));
 const hoistedConvertFileSrc = vi.hoisted(() =>
   vi.fn<(url: string, protocol: string) => string>(
     (url: string, protocol: string) => `${protocol}://${url}`
@@ -23,6 +24,10 @@ vi.mock('./mediaTransport', () => ({
   getCurrentMediaSessionScope: hoistedGetSessionScope,
 }));
 
+vi.mock('./platform', () => ({
+  webviewStripsCustomProtocolCache: hoistedStripsCache,
+}));
+
 import {
   addMediaRetryRevision,
   addTauriMediaRetryRevision,
@@ -38,6 +43,8 @@ afterEach(() => {
   hoistedIsTauri.mockReturnValue(false);
   hoistedGetSessionScope.mockReset();
   hoistedGetSessionScope.mockReturnValue('session_abc');
+  hoistedStripsCache.mockReset();
+  hoistedStripsCache.mockReturnValue(true);
 });
 
 const VERSION_SNIPPET = '__sable_media_cache=3';
@@ -202,6 +209,31 @@ describe('addTauriMediaRetryRevision', () => {
   });
 });
 
+describe('prepareLoopbackImageSource', () => {
+  const RAW = 'https://matrix.example.com/_matrix/client/v1/media/thumbnail/example.com/abc123';
+
+  it('skips the loopback where the protocol keeps its cache headers', async () => {
+    hoistedIsTauri.mockReturnValue(true);
+    hoistedStripsCache.mockReturnValue(false);
+
+    const source = await prepareLoopbackImageSource(RAW);
+
+    expect(source).toContain('sable-media://');
+    expect(hoistedInvoke).not.toHaveBeenCalled();
+  });
+
+  it('uses the loopback where the headers would be stripped', async () => {
+    hoistedIsTauri.mockReturnValue(true);
+    hoistedStripsCache.mockReturnValue(true);
+    hoistedInvoke.mockResolvedValue('http://127.0.0.1:45678/capability');
+
+    await expect(prepareLoopbackImageSource(RAW)).resolves.toBe(
+      'http://127.0.0.1:45678/capability'
+    );
+    expect(hoistedInvoke).toHaveBeenCalledOnce();
+  });
+});
+
 describe('addMediaRetryRevision', () => {
   const WEB_URL =
     'https://matrix.example.com/_matrix/client/v1/media/thumbnail/example.com/abc123?width=96';
@@ -214,8 +246,6 @@ describe('addMediaRetryRevision', () => {
     expect(addMediaRetryRevision(WRAPPED, 0)).toBe(WRAPPED);
   });
 
-  // An identical src is never re-requested by the browser, so without this the retry
-  // fires no second load, no second error event, and the broken image sticks.
   it('changes the requested url outside Tauri so the retry actually re-requests', () => {
     hoistedIsTauri.mockReturnValue(false);
     const revised = addMediaRetryRevision(WEB_URL, 1);

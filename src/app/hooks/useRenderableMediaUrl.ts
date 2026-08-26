@@ -14,6 +14,7 @@ import {
 } from '$utils/swMediaAuth';
 import { rewriteAuthenticatedMediaUrl } from '$utils/matrix';
 import { addMediaRetryRevision } from '$utils/mediaUrl';
+import { webviewStripsCustomProtocolCache } from '$utils/platform';
 
 type ObjectUrlEntry = {
   refs: number;
@@ -207,6 +208,7 @@ export function useRenderableMediaUrl(
     () => getCachedSWMediaAuthSupport() ?? false
   );
   const protocolUrl = tauri ? (rewriteAuthenticatedMediaUrl(url ?? null) ?? undefined) : undefined;
+  const needsLoopback = tauri && webviewStripsCustomProtocolCache();
   const generation = useSyncExternalStore(
     subscribeLoopbackGeneration,
     getLoopbackGeneration,
@@ -224,7 +226,7 @@ export function useRenderableMediaUrl(
   }));
 
   useEffect(() => {
-    if (!tauri || !protocolUrl) return undefined;
+    if (!needsLoopback || !protocolUrl) return undefined;
     const entry = resolveLoopbackUrl(protocolUrl);
     if (entry.url) {
       setLoopbackState({ source: protocolUrl, url: entry.url, generation });
@@ -239,7 +241,7 @@ export function useRenderableMediaUrl(
     return () => {
       cancelled = true;
     };
-  }, [tauri, protocolUrl, generation]);
+  }, [needsLoopback, protocolUrl, generation]);
   const needsBlob = !swMediaAuthSupported;
   const usesExistingObjectUrl = renderableUrl?.startsWith('blob:') ?? false;
   const [resolvedState, setResolvedState] = useState<ResolvedMediaUrlState>(() => {
@@ -309,6 +311,7 @@ export function useRenderableMediaUrl(
     // No protocolUrl fallback while resolving: resolveLoopbackUrl already degrades to it,
     // and handing out the custom-scheme URL first would fail a media element.
     if (!protocolUrl) return undefined;
+    if (!needsLoopback) return protocolUrl;
     // A URL resolved under an older generation is dead after a cache clear; the effect
     // re-resolves against the current session.
     if (loopbackState.source === protocolUrl && loopbackState.generation === generation) {
@@ -348,17 +351,7 @@ type AvatarMediaSource = {
   onError: () => void;
 };
 
-// `crossOrigin` must match what the caller puts on its own <img>, or the out-of-band retry
-// below warms a different cache entry and the rendered element requests the media again.
-type AvatarMediaSourceOptions = {
-  crossOrigin?: 'anonymous';
-};
-
-export function useAvatarMediaSource(
-  src: string | undefined,
-  options?: AvatarMediaSourceOptions
-): AvatarMediaSource {
-  const crossOrigin = options?.crossOrigin;
+export function useAvatarMediaSource(src: string | undefined): AvatarMediaSource {
   const [error, setError] = useState(false);
   const [retryRevision, setRetryRevision] = useState(0);
   const mediaSrc = useRenderableMediaSource(src, retryRevision);
@@ -368,38 +361,19 @@ export function useAvatarMediaSource(
     setRetryRevision(0);
   }, [src]);
 
-  // First attempt only: on Tauri the resolved url arrives after the initial render, so an
-  // error latched against the earlier (or absent) source must not outlive it. A retry
-  // deliberately does not clear the latch here — the preload below owns that, which is what
-  // keeps the fallback on screen instead of blinking through an empty <img>.
+  // Cleared mid-ladder too: a suspended webview cancels loads without firing load or error.
   useEffect(() => {
-    if (retryRevision > 0) return;
     setError(false);
-  }, [mediaSrc, retryRevision]);
-
-  // Rendering a retried <img> straight away shows its placeholder background until the load
-  // settles, which reads as the avatar blinking once per attempt. Loading out of band keeps
-  // the fallback up and swaps to the image only once it is decodable, by which point the
-  // rendered element resolves from cache.
-  useEffect(() => {
-    if (!error || retryRevision === 0 || !mediaSrc) return undefined;
-
-    const probe = new Image();
-    if (crossOrigin && !mediaSrc.startsWith('blob:')) {
-      probe.crossOrigin = crossOrigin;
-    }
-    const onLoad = () => setError(false);
-    probe.addEventListener('load', onLoad, { once: true });
-    probe.src = mediaSrc;
-
-    return () => probe.removeEventListener('load', onLoad);
-  }, [error, retryRevision, mediaSrc, crossOrigin]);
+  }, [mediaSrc]);
 
   useEffect(() => {
     if (!error) return undefined;
     const delay = AVATAR_RETRY_DELAYS_MS[retryRevision];
     if (delay === undefined) return undefined;
-    const timer = setTimeout(() => setRetryRevision((revision) => revision + 1), delay);
+    const timer = setTimeout(() => {
+      setError(false);
+      setRetryRevision((revision) => revision + 1);
+    }, delay);
     return () => clearTimeout(timer);
   }, [error, retryRevision]);
 

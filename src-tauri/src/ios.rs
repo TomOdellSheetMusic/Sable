@@ -4,7 +4,7 @@
 // the same approach as Capacitor's hideFormAccessoryBar.
 
 use std::ffi::CString;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -12,11 +12,11 @@ use objc2::rc::{Allocated, Retained};
 use objc2::runtime::{
     AnyClass, AnyObject, ClassBuilder, NSObject, NSObjectProtocol, ProtocolObject, Sel,
 };
-use objc2::{define_class, msg_send, sel, AnyThread, ClassType};
+use objc2::{define_class, msg_send, sel, AnyThread};
 use objc2_avf_audio::AVAudioSession;
 use objc2_call_kit::{
-    CXCallController, CXCallUpdate, CXEndCallAction, CXHandle, CXHandleType, CXProvider,
-    CXProviderConfiguration, CXProviderDelegate, CXStartCallAction, CXTransaction,
+    CXCallController, CXEndCallAction, CXHandle, CXHandleType, CXProvider, CXProviderConfiguration,
+    CXProviderDelegate, CXStartCallAction,
 };
 use objc2_foundation::{NSString, NSUUID};
 use tauri::webview::WebviewWindow;
@@ -207,11 +207,6 @@ mod callkit {
                 let allocated = CXStartCallAction::alloc();
                 CXStartCallAction::initWithCallUUID_handle(allocated, &uuid, &handle)
             };
-            let transaction = unsafe {
-                let allocated = CXTransaction::alloc();
-                CXTransaction::initWithAction(allocated, &action)
-            };
-
             let completion: RcBlock<dyn Fn(*mut objc2_foundation::NSError)> =
                 RcBlock::new(move |_error: *mut objc2_foundation::NSError| {});
             unsafe {
@@ -398,7 +393,6 @@ pub(crate) fn play_notification_sound(kind: String) -> Result<(), String> {
 extern "C" {}
 
 use std::ffi::OsStr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use block2::RcBlock;

@@ -458,6 +458,7 @@ pub fn run() {
             network::media_protocol::clear_media_session,
             network::media_protocol::set_media_encryption,
             network::media_protocol::prepare_loopback_media,
+            network::media_protocol::ensure_loopback_media,
             sentry::set_native_sentry_enabled,
             share_inbox::share_inbox_drain,
             share_inbox::share_inbox_read,
@@ -519,12 +520,12 @@ pub fn run() {
         return;
     };
 
-    app.run(|app, event| {
+    app.run(|_app, _event| {
         #[cfg(desktop)]
-        desktop::tray::handle_run_event(app, event);
+        desktop::tray::handle_run_event(_app, _event);
 
         #[cfg(not(any(desktop, mobile)))]
-        let _ = (app, event);
+        let _ = (_app, _event);
     });
 }
 

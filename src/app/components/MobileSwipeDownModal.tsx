@@ -104,7 +104,7 @@ export function MobileSwipeDownModal({
   skipReturnFocusRef,
   sheetClassName,
   sheetStyle,
-  keyboardAware = false,
+  keyboardAware = true,
   overlayDragHandle = false,
 }: MobileSwipeDownModalProps) {
   const sheetRef = useRef<HTMLDivElement>(null);

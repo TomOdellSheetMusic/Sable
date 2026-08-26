@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { MatrixClient } from '$types/matrix-sdk';
+import type { ClientEvent, MatrixClient } from '$types/matrix-sdk';
+import { SyncState } from '$types/matrix-sdk';
 import type { Session } from '$state/sessions';
 import type * as PlatformModule from '$utils/platform';
 import { ACTIVE_SESSION_KEY, MATRIX_SESSIONS_KEY } from '$state/sessions';
@@ -14,9 +15,13 @@ vi.mock('$utils/platform', async (importOriginal) => ({
 }));
 
 import {
+  claimCryptoStore,
+  getCryptoStoreOwner,
   installSlidingSyncRequestPatch,
   newSlidingSyncConnId,
   ownsActiveMediaSession,
+  recheckKeyBackupAfterInitialSync,
+  releaseCryptoStore,
   resolvePollTimeoutMs,
   supportsSlidingSync,
 } from './initMatrix';
@@ -277,5 +282,105 @@ describe('resolvePollTimeoutMs', () => {
     isMobileTauri.mockReturnValue(true);
 
     expect(resolvePollTimeoutMs(5000)).toBe(5000);
+  });
+});
+
+const makeKeyBackupMx = (syncState: SyncState | null) => {
+  const checkKeyBackupAndEnable = vi.fn<() => Promise<null>>().mockResolvedValue(null);
+  const listeners = new Set<(state: SyncState) => void>();
+  const mx = {
+    getSyncState: () => syncState,
+    getCrypto: () => ({ checkKeyBackupAndEnable }),
+    on: (_event: ClientEvent, cb: (state: SyncState) => void) => listeners.add(cb),
+    removeListener: (_event: ClientEvent, cb: (state: SyncState) => void) => listeners.delete(cb),
+  } as unknown as MatrixClient;
+
+  const emitSync = (state: SyncState) => {
+    listeners.forEach((cb) => cb(state));
+  };
+
+  return { mx, checkKeyBackupAndEnable, emitSync, listeners };
+};
+
+describe('recheckKeyBackupAfterInitialSync', () => {
+  it('re-checks key backup once the first sync completes', () => {
+    const { mx, checkKeyBackupAndEnable, emitSync } = makeKeyBackupMx(null);
+
+    recheckKeyBackupAfterInitialSync(mx);
+    expect(checkKeyBackupAndEnable).not.toHaveBeenCalled();
+
+    emitSync(SyncState.Prepared);
+
+    expect(checkKeyBackupAndEnable).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-checks immediately when the client has already synced', () => {
+    const { mx, checkKeyBackupAndEnable } = makeKeyBackupMx(SyncState.Syncing);
+
+    recheckKeyBackupAfterInitialSync(mx);
+
+    expect(checkKeyBackupAndEnable).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-checks only once and stops listening', () => {
+    const { mx, checkKeyBackupAndEnable, emitSync, listeners } = makeKeyBackupMx(null);
+
+    recheckKeyBackupAfterInitialSync(mx);
+    emitSync(SyncState.Prepared);
+    emitSync(SyncState.Syncing);
+
+    expect(checkKeyBackupAndEnable).toHaveBeenCalledTimes(1);
+    expect(listeners.size).toBe(0);
+  });
+
+  it('waits for a usable sync state', () => {
+    const { mx, checkKeyBackupAndEnable, emitSync } = makeKeyBackupMx(null);
+
+    recheckKeyBackupAfterInitialSync(mx);
+    emitSync(SyncState.Reconnecting);
+    emitSync(SyncState.Error);
+
+    expect(checkKeyBackupAndEnable).not.toHaveBeenCalled();
+  });
+});
+
+describe('crypto store ownership', () => {
+  const clientA = { id: 'a' } as unknown as MatrixClient;
+  const clientB = { id: 'b' } as unknown as MatrixClient;
+  const storeKey = 'sync@alice:example.org';
+
+  beforeEach(() => {
+    releaseCryptoStore(clientA);
+    releaseCryptoStore(clientB);
+  });
+
+  it('reports the client currently holding the store', () => {
+    claimCryptoStore(clientA, storeKey);
+
+    expect(getCryptoStoreOwner(storeKey)).toBe(clientA);
+  });
+
+  it('reports no owner once the holder releases it', () => {
+    claimCryptoStore(clientA, storeKey);
+    releaseCryptoStore(clientA);
+
+    expect(getCryptoStoreOwner(storeKey)).toBeUndefined();
+  });
+
+  it('keeps the new owner when a superseded client is released afterwards', () => {
+    claimCryptoStore(clientA, storeKey);
+    claimCryptoStore(clientB, storeKey);
+
+    // Otherwise the next init sees a free store and opens a second OlmMachine.
+    releaseCryptoStore(clientA);
+
+    expect(getCryptoStoreOwner(storeKey)).toBe(clientB);
+  });
+
+  it('ignores a release from a client that never claimed a store', () => {
+    claimCryptoStore(clientA, storeKey);
+    releaseCryptoStore(clientB);
+
+    expect(getCryptoStoreOwner(storeKey)).toBe(clientA);
   });
 });

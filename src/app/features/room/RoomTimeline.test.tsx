@@ -52,6 +52,8 @@ const {
     forwardStatus: 'idle',
     canPaginateBack: false,
     canPaginateForward: false,
+    backwardError: false,
+    forwardError: false,
     jumpFailed: false,
     focusItem: undefined as { eventId: string; scrollTo: boolean; highlight: boolean } | undefined,
     setFocusItem: vi.fn<() => void>(),
@@ -408,6 +410,8 @@ beforeEach(() => {
   timelineSync.liveTimelineLinked = true;
   timelineSync.jumpFailed = false;
   timelineSync.backwardStatus = 'idle';
+  timelineSync.backwardError = false;
+  timelineSync.forwardError = false;
   timelineSync.forwardStatus = 'idle';
   (timelineSync.handleTimelinePagination as ReturnType<typeof vi.fn>).mockReset();
   (timelineSync.cancelEventTimelineLoad as ReturnType<typeof vi.fn>).mockReset();
@@ -859,7 +863,7 @@ describe('failed backfill on an empty timeline', () => {
   it('surfaces the error with a working Retry instead of endless placeholders', () => {
     timelineSync.eventsLength = 0;
     timelineSync.canPaginateBack = true;
-    timelineSync.backwardStatus = 'error';
+    timelineSync.backwardError = true;
 
     const { getByText } = renderTimeline();
 

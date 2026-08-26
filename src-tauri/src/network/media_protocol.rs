@@ -10,12 +10,14 @@ use std::{
 use sha2::{Digest, Sha256};
 use tauri::{
     http::{header, Request, Response, StatusCode, Uri},
-    AppHandle, Manager, Runtime, State, UriSchemeContext, UriSchemeResponder,
+    AppHandle, Emitter, Manager, Runtime, State, UriSchemeContext, UriSchemeResponder,
 };
 
 mod crypto;
 mod lane;
 mod loopback;
+
+pub const LOOPBACK_REBOUND_EVENT: &str = "sable-media://loopback-rebound";
 mod response;
 mod session;
 
@@ -130,6 +132,13 @@ impl MediaSessionState {
         if let Some(loopback) = &self.loopback {
             loopback.clear();
         }
+    }
+
+    fn ensure_loopback_media_live(&self) -> Result<bool, String> {
+        let Some(loopback) = &self.loopback else {
+            return Ok(false);
+        };
+        loopback.ensure_live().map_err(|err| err.to_string())
     }
 
     // Shared across requests so the connection pool and TLS sessions stay warm.
@@ -260,6 +269,17 @@ pub fn set_media_encryption(
 }
 
 #[tauri::command]
+pub fn ensure_loopback_media<R: Runtime>(
+    app: AppHandle<R>,
+    state: tauri::State<'_, MediaSessionState>,
+) -> Result<(), String> {
+    if state.ensure_loopback_media_live()? {
+        let _ = app.emit(LOOPBACK_REBOUND_EVENT, ());
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn prepare_loopback_media<R: Runtime>(
     app: AppHandle<R>,
     url: String,
@@ -372,6 +392,9 @@ async fn handle_request<R: Runtime>(
     if loopback && in_memory_body.is_none() {
         let state = app.state::<MediaSessionState>();
         if let Some(loopback) = &state.loopback {
+            if loopback.ensure_live().unwrap_or(false) {
+                let _ = app.emit(LOOPBACK_REBOUND_EVENT, ());
+            }
             return Ok(loopback.redirect_response(&session, &cache_key, disk_path, &content_type));
         }
     }

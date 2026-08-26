@@ -887,6 +887,7 @@ function MessageInternal(
         canPinEvent: canPinEvent,
         canDelete: canDelete,
         setIsEmoji: setIsEmoji,
+        imagePackRooms: imagePackRooms,
         ActualMessage: (
           <div style={{ width: '100%' }}>
             <WrappedMessage

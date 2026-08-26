@@ -5,6 +5,18 @@ import { hydrateAllRoomMembers } from '$client/roomMemberHydration';
 
 const MAX_EAGER_MEMBER_COUNT = 1_000;
 
+const sameRoster = (prev: RoomMember[], next: RoomMember[]): boolean =>
+  prev.length === next.length &&
+  prev.every((member, index) => {
+    const other = next[index];
+    return (
+      !!other &&
+      member.userId === other.userId &&
+      member.membership === other.membership &&
+      member.powerLevel === other.powerLevel
+    );
+  });
+
 export const useRoomMembers = (mx: MatrixClient, roomId: string, enabled = true): RoomMember[] => {
   const [members, setMembers] = useState<RoomMember[]>([]);
 
@@ -20,7 +32,8 @@ export const useRoomMembers = (mx: MatrixClient, roomId: string, enabled = true)
 
     const updateMemberList = (event?: MatrixEvent) => {
       if (!room || disposed || (event && event.getRoomId() !== roomId)) return;
-      setMembers(room.getMembers());
+      const next = room.getMembers();
+      setMembers((prev) => (sameRoster(prev, next) ? prev : next));
     };
 
     // A failed SDK member load must not trigger the direct roster fallback:

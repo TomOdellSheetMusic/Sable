@@ -113,6 +113,7 @@ jobs:
       - name: Build Android APK
         shell: bash
         run: |
+          export SABLE_LAUNCHER_ICON=dev
           if [ -n "${ANDROID_KEY_BASE64:-}" ]; then
             pnpm tauri android build --config src-tauri/tauri.pr.conf.json --apk --target aarch64 armv7
           else
@@ -177,6 +178,7 @@ jobs:
       - name: Build unsigned IPA
         shell: bash
         run: |
+          export SABLE_LAUNCHER_ICON=dev
           pnpm tauri ios build --config src-tauri/tauri.pr.conf.json --no-sign --ci
           IPA=$(find src-tauri/gen/apple/build -name '*.ipa' -type f | head -1)
           [ -n "$IPA" ] || { echo "IPA not found"; exit 1; }

@@ -45,6 +45,7 @@ const matrixClient = vi.hoisted(() => ({
   getSafeUserId: vi.fn<() => string>(() => '@user:example.com'),
   getUserId: vi.fn<() => string>(() => '@user:example.com'),
   getCrypto: vi.fn<() => unknown>(() => undefined),
+  decryptEventIfNeeded: vi.fn<(event: unknown) => Promise<void>>(),
   getRoom: vi.fn<() => unknown>(() => undefined),
   fetchRoomEvent: vi.fn<() => Promise<unknown>>(),
 }));
@@ -116,6 +117,16 @@ describe('UnifiedPushNotifications', () => {
     matrixClient.setPusher.mockClear();
     matrixClient.getPushers.mockResolvedValue({ pushers: [] });
     matrixClient.getCrypto.mockReturnValue(undefined);
+    matrixClient.decryptEventIfNeeded.mockImplementation(async (event) => {
+      const crypto = matrixClient.getCrypto();
+      const mEvent = event as {
+        shouldAttemptDecryption: () => boolean;
+        attemptDecryption: (crypto: never) => Promise<void>;
+      };
+      if (crypto && mEvent.shouldAttemptDecryption()) {
+        await mEvent.attemptDecryption(crypto as never);
+      }
+    });
     matrixClient.getRoom.mockReturnValue(undefined);
     invoke.mockResolvedValue(undefined);
     addPluginListener.mockImplementation(

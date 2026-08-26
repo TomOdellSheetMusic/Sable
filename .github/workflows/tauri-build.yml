@@ -316,6 +316,7 @@ jobs:
         run: |
           if [ "$IS_NIGHTLY" = "true" ]; then
             export SABLE_BUILD_FLAVOR=dev
+            export SABLE_LAUNCHER_ICON=nightly
           fi
           CONFIG_ARGS=""
           [ "$IS_NIGHTLY" = "true" ] && CONFIG_ARGS="--config src-tauri/tauri.nightly.conf.json"
@@ -444,17 +445,28 @@ jobs:
         run: gh release upload "$TAG" latest.json --clobber
 
       - name: Remove superseded nightly assets
-        if: ${{ needs.setup-release.outputs.nightly == 'true' && needs.android.result == 'success' && steps.manifest.outputs.produced == 'true' }}
+        if: ${{ needs.setup-release.outputs.nightly == 'true' && steps.manifest.outputs.produced == 'true' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          gh release view nightly --json assets > nightly-assets.json
+
+          # extra-data URLs in the published Flatpak repo point at these.
+          jq -r '[.assets[] | select(.name | test("-linux-(x86_64|aarch64)\\.tar\\.gz$"))]
+                 | sort_by(.updatedAt) | reverse | .[0:3] | .[].name' \
+            nightly-assets.json > flatpak-keep.txt
+
           # .json manifests are overwritten in place, not accumulated.
-          gh release view nightly --json assets \
-            | jq -r --arg cutoff "$STARTED_AT" \
-                '.assets[] | select(.updatedAt <= $cutoff and (.name | endswith(".json") | not)) | .name' \
+          jq -r --arg cutoff "$STARTED_AT" \
+              '.assets[] | select(.updatedAt <= $cutoff and (.name | endswith(".json") | not)) | .name' \
+            nightly-assets.json \
             | while read -r name; do
                 [ -n "$name" ] || continue
+                if grep -Fxq "$name" flatpak-keep.txt; then
+                  echo "Keeping $name for the nightly Flatpak"
+                  continue
+                fi
                 echo "Removing superseded nightly asset: $name"
                 gh release delete-asset nightly "$name" --yes
               done

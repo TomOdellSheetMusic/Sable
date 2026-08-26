@@ -578,8 +578,6 @@ describe('fetchMediaBlob', () => {
         expect.any(Blob)
       );
 
-      // The next mount is back at revision 0, so it must hit the entry the retry wrote
-      // instead of downloading the same avatar again.
       await expect(fetchMediaBlob(canonical)).resolves.toEqual(media);
       expect(fetch).toHaveBeenCalledOnce();
     },

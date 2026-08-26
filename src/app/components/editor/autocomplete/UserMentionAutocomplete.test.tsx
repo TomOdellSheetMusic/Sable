@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MatrixClient, Room, RoomMember } from '$types/matrix-sdk';
 import type {
   EditorAutocompleteQuery,
@@ -13,13 +13,15 @@ const mocks = vi.hoisted(() => ({
   },
   resetSearch: vi.fn<() => void>(),
   search: vi.fn<(query: string) => void>(),
+  roomMembers: [] as RoomMember[],
+  searchResult: undefined as { query: string; items: RoomMember[] } | undefined,
 }));
 
 vi.mock('$hooks/useMatrixClient', () => ({ useMatrixClient: () => mocks.mx }));
 vi.mock('$hooks/useMediaAuthentication', () => ({ useMediaAuthentication: () => false }));
-vi.mock('$hooks/useRoomMembers', () => ({ useRoomMembers: () => [] as RoomMember[] }));
+vi.mock('$hooks/useRoomMembers', () => ({ useRoomMembers: () => mocks.roomMembers }));
 vi.mock('$hooks/useAsyncSearch', () => ({
-  useAsyncSearch: () => [undefined, mocks.search, mocks.resetSearch],
+  useAsyncSearch: () => [mocks.searchResult, mocks.search, mocks.resetSearch],
 }));
 vi.mock('$hooks/useKeyDown', () => ({ useKeyDown: () => undefined }));
 
@@ -39,6 +41,11 @@ const query: EditorAutocompleteQuery<string> = {
 };
 
 describe('UserMentionAutocomplete', () => {
+  beforeEach(() => {
+    mocks.roomMembers = [];
+    mocks.searchResult = undefined;
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
@@ -74,5 +81,28 @@ describe('UserMentionAutocomplete', () => {
     expect(controller.insertInline).toHaveBeenCalledOnce();
     expect(controller.insertText).toHaveBeenCalledWith(' ');
     expect(requestClose).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the previous matches while the search for a new query is pending', () => {
+    mocks.roomMembers = [
+      { userId: '@alice:example.org', membership: 'join', getMxcAvatarUrl: () => undefined },
+      { userId: '@bob:example.org', membership: 'join', getMxcAvatarUrl: () => undefined },
+    ] as unknown as RoomMember[];
+    mocks.searchResult = {
+      query: 'alic',
+      items: [mocks.roomMembers[0]!],
+    };
+
+    render(
+      <UserMentionAutocomplete
+        room={room}
+        controller={{} as unknown as ProseMirrorEditorController}
+        query={query}
+        requestClose={vi.fn<() => void>()}
+      />
+    );
+
+    expect(screen.getByText('alice')).toBeInTheDocument();
+    expect(screen.queryByText('bob')).not.toBeInTheDocument();
   });
 });

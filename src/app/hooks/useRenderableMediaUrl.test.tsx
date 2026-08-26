@@ -23,40 +23,16 @@ const tauriApi = vi.hoisted(() => ({
   ),
 }));
 
+const platform = vi.hoisted(() => ({
+  webviewStripsCustomProtocolCache: vi.fn<() => boolean>(() => true),
+}));
+
 const LOOPBACK_URL = 'http://127.0.0.1:45678/capability';
 
 vi.mock('$utils/swMediaAuth', () => swMediaAuth);
 vi.mock('$utils/mediaTransport', () => mediaTransport);
 vi.mock('@tauri-apps/api/core', () => tauriApi);
-
-// The out-of-band retry preload never fires in jsdom, so tests drive it explicitly.
-class StubImage {
-  src = '';
-
-  crossOrigin: string | null = null;
-
-  private readonly handlers = new Map<string, Set<() => void>>();
-
-  constructor() {
-    imageProbes.push(this);
-  }
-
-  addEventListener(type: string, handler: () => void): void {
-    const existing = this.handlers.get(type) ?? new Set<() => void>();
-    existing.add(handler);
-    this.handlers.set(type, existing);
-  }
-
-  removeEventListener(type: string, handler: () => void): void {
-    this.handlers.get(type)?.delete(handler);
-  }
-
-  emit(type: string): void {
-    this.handlers.get(type)?.forEach((handler) => handler());
-  }
-}
-
-const imageProbes: StubImage[] = [];
+vi.mock('$utils/platform', () => platform);
 
 describe('useRenderableMediaUrl', () => {
   beforeEach(() => {
@@ -70,6 +46,8 @@ describe('useRenderableMediaUrl', () => {
     mediaTransport.fetchMediaBlob.mockReset();
     mediaTransport.getCurrentMediaSessionScope.mockReset();
     mediaTransport.getCurrentMediaSessionScope.mockReturnValue('anonymous');
+    platform.webviewStripsCustomProtocolCache.mockReset();
+    platform.webviewStripsCustomProtocolCache.mockReturnValue(true);
     tauriApi.isTauri.mockReset();
     tauriApi.invoke.mockReset();
     tauriApi.invoke.mockResolvedValue(LOOPBACK_URL);
@@ -77,8 +55,6 @@ describe('useRenderableMediaUrl', () => {
     tauriApi.convertFileSrc.mockImplementation(
       (url: string, protocol: string) => `${protocol}://${url}`
     );
-    imageProbes.length = 0;
-    vi.stubGlobal('Image', StubImage);
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:rendered-media');
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
     Object.defineProperty(navigator, 'serviceWorker', {
@@ -93,7 +69,6 @@ describe('useRenderableMediaUrl', () => {
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -366,6 +341,43 @@ describe('useRenderableMediaUrl', () => {
     expect(result.current).toBe('https://example.org/avatar.png');
   });
 
+  describe('where the custom protocol keeps its cache headers', () => {
+    const RAW = 'https://matrix.example.org/_matrix/client/v1/media/thumbnail/example.org/abc123';
+
+    beforeEach(() => {
+      tauriApi.isTauri.mockReturnValue(true);
+      platform.webviewStripsCustomProtocolCache.mockReturnValue(false);
+    });
+
+    it('returns the protocol url without resolving a loopback origin', async () => {
+      const { useRenderableMediaUrl } = await import('./useRenderableMediaUrl');
+
+      const { result } = renderHook(() => useRenderableMediaUrl(RAW));
+
+      expect(result.current).toContain('sable-media://');
+      expect(result.current).not.toContain('127.0.0.1');
+      expect(tauriApi.invoke).not.toHaveBeenCalled();
+    });
+
+    it('resolves synchronously, so an avatar never renders its fallback first', async () => {
+      const { useRenderableMediaSource } = await import('./useRenderableMediaUrl');
+
+      const { result } = renderHook(() => useRenderableMediaSource(RAW));
+
+      expect(result.current).toBeDefined();
+    });
+
+    it('still resolves a loopback origin where the headers would be stripped', async () => {
+      platform.webviewStripsCustomProtocolCache.mockReturnValue(true);
+      const { useRenderableMediaUrl } = await import('./useRenderableMediaUrl');
+
+      const { result } = renderHook(() => useRenderableMediaUrl(RAW));
+
+      await waitFor(() => expect(result.current).toBe(LOOPBACK_URL));
+      expect(tauriApi.invoke).toHaveBeenCalled();
+    });
+  });
+
   describe('useAvatarMediaSource', () => {
     const RAW_URL =
       'sable-media://https://matrix.example.org/_matrix/client/v1/media/thumbnail/example.org/abc123';
@@ -395,36 +407,22 @@ describe('useRenderableMediaUrl', () => {
         await vi.advanceTimersByTimeAsync(500);
       });
 
-      // The revision advances, but the latch stays shut so the caller keeps rendering its
-      // fallback rather than blinking through an empty <img> for the duration of the load.
-      expect(result.current.error).toBe(true);
+      expect(result.current.error).toBe(false);
       expect(result.current.mediaSrc).toBe('http://127.0.0.1:45678/fresh-capability');
       expect(tauriApi.invoke).toHaveBeenCalledTimes(2);
       const retryUrl = tauriApi.invoke.mock.calls[1]?.[1].url ?? '';
       expect(retryUrl).toContain('__sable_media_retry=1');
-
-      const probe = imageProbes.at(-1);
-      expect(probe?.src).toBe('http://127.0.0.1:45678/fresh-capability');
-
-      act(() => {
-        probe?.emit('load');
-      });
-      expect(result.current.error).toBe(false);
       vi.useRealTimers();
     });
 
-    it('only reveals the image once the out-of-band retry decodes', async () => {
+    it('clears a mid-ladder error latch when a resolved url arrives on its own', async () => {
       vi.useFakeTimers();
       tauriApi.isTauri.mockReturnValue(true);
-      tauriApi.invoke.mockImplementation(
-        async (_cmd: string, args: { url: string }) =>
-          `http://127.0.0.1:45678/capability-${args.url.length}`
-      );
-      const { useAvatarMediaSource } = await import('./useRenderableMediaUrl');
+      tauriApi.invoke.mockResolvedValue('http://127.0.0.1:45678/first-capability');
+      const { useAvatarMediaSource, clearLoopbackMediaUrlCache } =
+        await import('./useRenderableMediaUrl');
 
-      const { result } = renderHook(() =>
-        useAvatarMediaSource(RAW_URL, { crossOrigin: 'anonymous' })
-      );
+      const { result } = renderHook(() => useAvatarMediaSource(RAW_URL));
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
@@ -433,22 +431,25 @@ describe('useRenderableMediaUrl', () => {
         result.current.onError();
       });
 
-      // Two attempts elapse without the preload ever settling: the latch never opens, so
-      // the fallback is continuous instead of flashing once per attempt.
+      tauriApi.invoke.mockResolvedValue('http://127.0.0.1:45678/second-capability');
       await act(async () => {
         await vi.advanceTimersByTimeAsync(500);
       });
-      expect(result.current.error).toBe(true);
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(1500);
+      act(() => {
+        result.current.onError();
       });
       expect(result.current.error).toBe(true);
 
-      // The preload must request exactly what the rendered element would, or it warms a
-      // different cache entry and the real <img> refetches.
-      const probe = imageProbes.at(-1);
-      expect(probe?.src).toBe(result.current.mediaSrc);
-      expect(probe?.crossOrigin).toBe('anonymous');
+      tauriApi.invoke.mockResolvedValue('http://127.0.0.1:45678/rotated-capability');
+      act(() => {
+        clearLoopbackMediaUrlCache();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(result.current.mediaSrc).toBe('http://127.0.0.1:45678/rotated-capability');
+      expect(result.current.error).toBe(false);
       vi.useRealTimers();
     });
 
@@ -467,27 +468,28 @@ describe('useRenderableMediaUrl', () => {
       });
       expect(result.current.mediaSrc).toBeDefined();
 
+      const failAndExhaustRetry = async (delay: number) => {
+        act(() => {
+          result.current.onError();
+        });
+        expect(result.current.error).toBe(true);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(delay);
+        });
+        expect(result.current.error).toBe(false);
+      };
+      await failAndExhaustRetry(500);
+      await failAndExhaustRetry(1500);
+      await failAndExhaustRetry(4500);
+
       act(() => {
         result.current.onError();
       });
       expect(result.current.error).toBe(true);
-
-      // Nothing ever loads, so the latch holds and the ladder walks its whole schedule.
-      const advance = async (delay: number) => {
-        await act(async () => {
-          await vi.advanceTimersByTimeAsync(delay);
-        });
-        expect(result.current.error).toBe(true);
-      };
-      await advance(500);
-      await advance(1500);
-      await advance(4500);
-
-      // One resolve for the initial source plus one per scheduled retry.
-      expect(tauriApi.invoke).toHaveBeenCalledTimes(4);
-
-      await advance(60_000);
-      expect(tauriApi.invoke).toHaveBeenCalledTimes(4);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(result.current.error).toBe(true);
       vi.useRealTimers();
     });
 

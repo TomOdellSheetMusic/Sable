@@ -298,7 +298,16 @@ const estimateWithoutReceipt = (
   if (!hasActivity && !hasDistantReadEvidence) return undefined;
 
   if (total > 0 || highlight > 0) {
-    return hasActivity ? { roomId: room.roomId, highlight, total } : undefined;
+    if (!hasActivity) return undefined;
+    const counted = countTimelineUnread(room, userId, {
+      boundaryEventId: fullyReadEventId,
+      stopAtOwnEvent: true,
+    });
+    return {
+      roomId: room.roomId,
+      highlight: Math.max(highlight, counted.highlight),
+      total: Math.max(total, counted.total),
+    };
   }
 
   if (boundaryKnown) {
@@ -310,8 +319,14 @@ const estimateWithoutReceipt = (
     return { roomId: room.roomId, highlight: counted.highlight, total: counted.total };
   }
   if (hasActivity && !fullyReadEventId) {
-    // No read evidence at all: dot badge with an unknown real count.
-    return { roomId: room.roomId, highlight: 0, total: 1, estimated: true };
+    const counted = countTimelineUnread(room, userId, { stopAtOwnEvent: true });
+    if (counted.total === 0 && counted.highlight === 0) return undefined;
+    return {
+      roomId: room.roomId,
+      highlight: counted.highlight,
+      total: counted.total,
+      estimated: true,
+    };
   }
   // Cannot prove unread state until the distant boundary is loaded.
   return { roomId: room.roomId, highlight: 0, total: 0, estimated: true };
@@ -362,6 +377,16 @@ export const getUnreadInfo = (room: Room, options?: UnreadInfoOptions): UnreadIn
   if (userId && counts.total === 0 && counts.highlight === 0 && hasTimelineUnread()) {
     const counted = countFromBoundary(room, userId);
     if (counted) return counted;
+  }
+
+  if (userId && counts.total > 0 && hasTimelineUnread()) {
+    const counted = countFromBoundary(room, userId);
+    if (counted) {
+      counts = {
+        total: Math.max(counts.total, counted.total),
+        highlight: Math.max(counts.highlight, counted.highlight),
+      };
+    }
   }
 
   if (userId && !room.getEventReadUpTo(userId)) {

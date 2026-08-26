@@ -61,7 +61,6 @@ import { MessageEditor } from './MessageEditor';
 import * as css from './styles.css';
 import { modalAtom, ModalType } from '$state/modal';
 import { OptionQuickMenu } from '$components/message/modals/Options';
-import { useRenderableMediaUrl } from '$hooks/useRenderableMediaUrl';
 
 export type ReactionHandler = (keyOrMxc: string, shortcode: string) => void;
 
@@ -505,8 +504,6 @@ function MessageInternal(
     return mxc ? mxcUrlToHttp(mx, mxc, useAuthentication, 48, 48, 'crop') : undefined;
   }, [pmp, memberAvatarMxc, profile.avatarUrl, mx, useAuthentication]);
 
-  const cachedAvatar = useRenderableMediaUrl(avatarUrl ?? undefined);
-
   // UI State
   const [isDesktopHover, setIsDesktopHover] = useState(false);
   const { hoverProps } = useHover({
@@ -680,7 +677,7 @@ function MessageInternal(
           >
             <UserAvatar
               userId={senderId}
-              src={cachedAvatar}
+              src={avatarUrl ?? undefined}
               alt={cleanedDisplayName}
               renderFallback={() => userFallbackIcon('md')}
             />

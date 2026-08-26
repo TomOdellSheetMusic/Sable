@@ -32,6 +32,7 @@ import { createDebugLogger } from '$utils/debugLogger';
 import { CustomStateEvent } from '$types/matrix/room';
 import * as Sentry from '@sentry/react';
 import { SlidingSyncSidebarCache } from './slidingSyncSidebarCache';
+import { markPreprocessingSlidingSyncTimelineReset } from './slidingSyncTimelineReset';
 
 const log = createLogger('slidingSync');
 const debugLog = createDebugLogger('slidingSync');
@@ -331,6 +332,7 @@ export const prepareSlidingSyncTimelines = (
 ): TimelineResetCompletion | null => {
   if (!resp?.rooms) return null;
   let didResetTimeline = false;
+  const resetTimelines: Array<{ room: Room; timelineSet: EventTimelineSet }> = [];
   const pendingEventsToRestore: Array<{
     timelineSet: EventTimelineSet;
     events: MatrixEvent[];
@@ -418,15 +420,18 @@ export const prepareSlidingSyncTimelines = (
         pendingEventsToRestore.push({ timelineSet, events: pendingEvents });
       }
       const previousOldState = room.oldState;
-      timelineSet.resetLiveTimeline(
-        typeof timelineData.prev_batch === 'string' ? timelineData.prev_batch : undefined
-      );
+      markPreprocessingSlidingSyncTimelineReset(timelineSet, () => {
+        timelineSet.resetLiveTimeline(
+          typeof timelineData.prev_batch === 'string' ? timelineData.prev_batch : undefined
+        );
+      });
       const newLiveTimeline = timelineSet.getLiveTimeline();
       room.oldState = newLiveTimeline.getState(EventTimeline.BACKWARDS)!;
       room.currentState = newLiveTimeline.getState(EventTimeline.FORWARDS)!;
       if (room.oldState !== previousOldState) {
         room.emit(RoomEvent.OldStateUpdated, room, previousOldState, room.oldState);
       }
+      resetTimelines.push({ room, timelineSet });
       didResetTimeline = true;
       continue;
     }
@@ -454,7 +459,7 @@ export const prepareSlidingSyncTimelines = (
   }
 
   if (didResetTimeline) mx?.resetNotifTimelineSet();
-  if (pendingEventsToRestore.length === 0) return null;
+  if (!didResetTimeline) return null;
 
   return () => {
     for (const { timelineSet, events } of pendingEventsToRestore) {
@@ -474,6 +479,10 @@ export const prepareSlidingSyncTimelines = (
           addToState: false,
         });
       }
+    }
+
+    for (const { room, timelineSet } of resetTimelines) {
+      room.emit(RoomEvent.TimelineRefresh, room, timelineSet);
     }
   };
 };

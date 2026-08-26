@@ -177,7 +177,14 @@ export function FaviconUpdater() {
     } catch {
       // Likely Firefox/Gecko-based and doesn't support badging API
     }
-  }, [roomToUnread, mDirects, invites, backgroundPushEnabled, registration, faviconForMentionsOnly]);
+  }, [
+    roomToUnread,
+    mDirects,
+    invites,
+    backgroundPushEnabled,
+    registration,
+    faviconForMentionsOnly,
+  ]);
 
   return null;
 }

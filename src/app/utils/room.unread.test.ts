@@ -456,4 +456,18 @@ describe('getUnreadInfo count sources', () => {
 
     expect(getUnreadInfo(room)).toEqual({ roomId: ROOM_UNREAD, highlight: 4, total: 4 });
   });
+
+  it('counts rapid messages even when the SDK count is a placeholder', () => {
+    // Sliding sync can report a placeholder 1 even though the loaded timeline
+    // holds several unread messages from the same sender.
+    const room = createRoom(ROOM_UNREAD, {
+      readUpTo: '$a',
+      total: 1,
+      highlight: 0,
+      events: [createEvent('$a', OTHER), createEvent('$b', OTHER), createEvent('$c', OTHER)],
+    });
+    bindRoom(room);
+
+    expect(getUnreadInfo(room)).toEqual({ roomId: ROOM_UNREAD, highlight: 0, total: 2 });
+  });
 });

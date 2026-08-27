@@ -314,11 +314,7 @@ export function HomeScreen() {
               <Box direction="Column" gap="700" style={{ maxWidth: toRem(964), width: '100%' }}>
                 <PageHeroSection>
                   <PageHero
-                    icon={
-                      <Avatar size="500" radii="400">
-                        {composerIcon(House)}
-                      </Avatar>
-                    }
+                    icon=""
                     title="Home"
                     subTitle="Your rooms, all in one place."
                   />

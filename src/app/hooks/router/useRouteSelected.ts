@@ -20,6 +20,10 @@ import { CREATE_ROOM_PATH } from '$pages/paths';
 export const useRouteSelected = (path: string): boolean =>
   !!useMatch({ path, caseSensitive: true, end: false });
 
+/** True when the current location is exactly the given path (not a child route). */
+export const useRouteSelectedExact = (path: string): boolean =>
+  !!useMatch({ path, caseSensitive: true, end: true });
+
 export const useCreateSelected = (): boolean => useRouteSelected(getCreatePath());
 
 export const useDirectSelected = (): boolean => useRouteSelected(getDirectPath());
@@ -29,7 +33,7 @@ export const useExploreSelected = (): boolean => useRouteSelected(getExplorePath
 export const useExploreFeaturedSelected = (): boolean => useRouteSelected(getExploreFeaturedPath());
 export const useExploreServer = (): string | undefined => useParams().server;
 
-export const useHomeSelected = (): boolean => useRouteSelected(getHomePath());
+export const useHomeSelected = (): boolean => useRouteSelectedExact(getHomePath());
 export const useHomeCreateSelected = (): boolean => useRouteSelected(CREATE_ROOM_PATH);
 export const useHomeSearchSelected = (): boolean => useRouteSelected(getHomeSearchPath());
 

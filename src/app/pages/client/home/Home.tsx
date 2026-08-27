@@ -29,7 +29,7 @@ import {
 import { CustomRoomType } from '$types/matrix/room';
 import { useOpenShallowRoute } from '$pages/client/useShallowRoute';
 import { getCanonicalAliasOrRoomId } from '$utils/matrix';
-import { useSelectedOrLastRoom } from '$hooks/router/useSelectedRoom';
+import { useSelectedOrLastRoom, useSelectedRoom } from '$hooks/router/useSelectedRoom';
 import {
   useHomeCreateSelected,
   useHomeSearchSelected,
@@ -196,6 +196,7 @@ export function Home() {
   const [joinCallOnSingleClick] = useSetting(settingsAtom, 'joinCallOnSingleClick');
 
   const selectedRoomId = useSelectedOrLastRoom();
+  const activeRoomId = useSelectedRoom();
   const createRoomSelected = useHomeCreateSelected();
   const homeSelected = useHomeSelected();
   const openShallowRoute = useOpenShallowRoute();
@@ -438,7 +439,7 @@ export function Home() {
                   if (!roomId) return null;
                   const room = mx.getRoom(roomId);
                   if (!room) return null;
-                  const selected = selectedRoomId === roomId;
+                  const selected = activeRoomId === roomId;
                   const canonicalName = getCanonicalAliasOrRoomId(mx, roomId);
 
                   return (

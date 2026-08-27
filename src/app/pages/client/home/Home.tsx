@@ -21,6 +21,7 @@ import {
   getExploreServerPath,
   getCreateRoomPath,
   getHomeForumPath,
+  getHomePath,
   getHomeRoomPath,
   getHomeSearchPath,
   withSearchParam,
@@ -29,7 +30,11 @@ import { CustomRoomType } from '$types/matrix/room';
 import { useOpenShallowRoute } from '$pages/client/useShallowRoute';
 import { getCanonicalAliasOrRoomId } from '$utils/matrix';
 import { useSelectedOrLastRoom } from '$hooks/router/useSelectedRoom';
-import { useHomeCreateSelected, useHomeSearchSelected } from '$hooks/router/useRouteSelected';
+import {
+  useHomeCreateSelected,
+  useHomeSearchSelected,
+  useHomeSelected,
+} from '$hooks/router/useRouteSelected';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { VirtualTile } from '$components/virtualizer';
 import { RoomNavCategoryButton, RoomNavItem } from '$features/room-nav';
@@ -192,6 +197,7 @@ export function Home() {
 
   const selectedRoomId = useSelectedOrLastRoom();
   const createRoomSelected = useHomeCreateSelected();
+  const homeSelected = useHomeSelected();
   const openShallowRoute = useOpenShallowRoute();
   const searchSelected = useHomeSearchSelected();
   const noRoomToDisplay = rooms.length === 0;
@@ -267,6 +273,28 @@ export function Home() {
         <PageNavContent scrollRef={scrollRef}>
           <Box direction="Column" gap="300">
             <NavCategory>
+              <NavItem variant="Background" radii="400" aria-selected={homeSelected}>
+                <NavButton onClick={() => navigate(getHomePath())}>
+                  <NavItemContent>
+                    <Box as="span" grow="Yes" alignItems="Center" justifyContent="Start" gap="200">
+                      <Avatar
+                        size={hideText ? undefined : '200'}
+                        radii="400"
+                        style={hideText ? { width: '100%', padding: '0' } : undefined}
+                      >
+                        {menuIcon(House)}
+                      </Avatar>
+                      {!hideText && (
+                        <Box as="span" grow="Yes">
+                          <Text as="span" size="Inherit" truncate>
+                            Home
+                          </Text>
+                        </Box>
+                      )}
+                    </Box>
+                  </NavItemContent>
+                </NavButton>
+              </NavItem>
               <NavItem variant="Background" radii="400" aria-selected={createRoomSelected}>
                 <NavButton onClick={() => openShallowRoute(getCreateRoomPath())}>
                   <NavItemContent>

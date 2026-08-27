@@ -6,7 +6,6 @@ import {
   House,
   Phone,
   VideoCamera,
-  composerIcon,
   sizedIcon,
   userFallbackIcon,
 } from '$components/icons/phosphor';
@@ -117,8 +116,7 @@ function ContactsList() {
       if (existing) {
         if (isOneToOne) {
           existing.roomId = roomId;
-          existing.name =
-            getMemberDisplayName(room, userId) ?? getMxIdLocalPart(userId) ?? userId;
+          existing.name = getMemberDisplayName(room, userId) ?? getMxIdLocalPart(userId) ?? userId;
           const avatarMxc = getMemberAvatarMxc(room, userId);
           existing.avatarUrl = avatarMxc
             ? (mxcUrlToHttp(mx, avatarMxc, useAuthentication, 96, 96) ?? undefined)
@@ -313,11 +311,7 @@ export function HomeScreen() {
             <PageContentCenter>
               <Box direction="Column" gap="700" style={{ maxWidth: toRem(964), width: '100%' }}>
                 <PageHeroSection>
-                  <PageHero
-                    icon=""
-                    title="Home"
-                    subTitle="Your rooms, all in one place."
-                  />
+                  <PageHero icon="" title="Home" subTitle="Your rooms, all in one place." />
                 </PageHeroSection>
 
                 <Box direction="Row" gap="500" alignItems="Start">

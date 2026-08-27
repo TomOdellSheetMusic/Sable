@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Avatar, Box, IconButton, Scroll, Text, toRem } from 'folds';
 import { useAtomValue } from 'jotai';
 import {
@@ -6,7 +6,6 @@ import {
   House,
   Phone,
   VideoCamera,
-  composerIcon,
   sizedIcon,
   userFallbackIcon,
 } from '$components/icons/phosphor';
@@ -23,12 +22,14 @@ import { useDirectRooms } from '$pages/client/direct/useDirectRooms';
 import { getDmOtherMember, getMemberAvatarMxc, getMemberDisplayName } from '$utils/room/display';
 import { getMxIdLocalPart, mxcUrlToHttp } from '$utils/matrix';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
+import { useUserProfile } from '$hooks/useUserProfile';
 import { useUserPresence, Presence, usePresenceLabel } from '$hooks/useUserPresence';
 import { PresenceBadge, AvatarPresence } from '$components/presence';
 import { UserAvatar } from '$components/user-avatar';
 import { useRoomName } from '$hooks/useRoomMeta';
 import { useCallSession, useCallMembers } from '$hooks/useCall';
 import { useActiveRTCSessionIds } from '$hooks/useMatrixRTCSession';
+import { fetchMediaBlob } from '$utils/mediaTransport';
 import { SequenceCard } from '$components/sequence-card';
 
 type Contact = {
@@ -40,8 +41,19 @@ type Contact = {
 
 function ContactRow({ contact }: { contact: Contact }) {
   const label = usePresenceLabel();
+  const mx = useMatrixClient();
+  const useAuthentication = useMediaAuthentication();
   const { navigateRoom } = useRoomNavigate();
   const presence = useUserPresence(contact.userId);
+  // Fetch the user's global profile (independent of room membership, which
+  // sliding sync may not have loaded yet) so the avatar/name render without
+  // opening the room.
+  const profile = useUserProfile(contact.userId);
+  const avatarUrl =
+    profile.avatarUrl && !contact.avatarUrl
+      ? (mxcUrlToHttp(mx, profile.avatarUrl, useAuthentication, 96, 96) ?? undefined)
+      : contact.avatarUrl;
+  const name = profile.displayName || contact.name;
 
   if (!presence || presence.presence === Presence.Offline) return null;
 
@@ -52,15 +64,15 @@ function ContactRow({ contact }: { contact: Contact }) {
           <Avatar size="400" radii="400">
             <UserAvatar
               userId={contact.userId}
-              src={contact.avatarUrl}
-              alt={contact.name}
+              src={avatarUrl}
+              alt={name}
               renderFallback={() => userFallbackIcon('sm')}
             />
           </Avatar>
         </AvatarPresence>
         <Box grow="Yes" direction="Column" gap="100" style={{ minWidth: 0 }}>
           <Text size="L400" truncate>
-            {contact.name}
+            {name}
           </Text>
           <Text size="T200" priority="400" truncate>
             {presence.status || label[presence.presence]}
@@ -71,7 +83,7 @@ function ContactRow({ contact }: { contact: Contact }) {
           variant="SurfaceVariant"
           radii="400"
           onClick={() => navigateRoom(contact.roomId)}
-          aria-label={`Message ${contact.name}`}
+          aria-label={`Message ${name}`}
         >
           {sizedIcon(ChatCircleDots, '200')}
         </IconButton>
@@ -87,6 +99,7 @@ function ContactsList() {
 
   const contacts = useMemo<Contact[]>(() => {
     const result: Contact[] = [];
+    const seen = new Set<string>();
     directRooms.forEach((roomId) => {
       const room = mx.getRoom(roomId);
       if (!room) return;
@@ -94,6 +107,24 @@ function ContactsList() {
       if (!other) return;
       const userId = other.userId;
       if (!userId || userId === mx.getUserId()) return;
+      // A DM that was later turned into a group room can still be tagged as a
+      // DM, so the same person may appear in more than one room. Show each
+      // person once, preferring the genuine 1:1 DM (exactly two joined
+      // members) so "chat" opens the real DM rather than the group room.
+      const isOneToOne = room.getJoinedMemberCount() === 2;
+      const existing = result.find((c) => c.userId === userId);
+      if (existing) {
+        if (isOneToOne) {
+          existing.roomId = roomId;
+          existing.name = getMemberDisplayName(room, userId) ?? getMxIdLocalPart(userId) ?? userId;
+          const avatarMxc = getMemberAvatarMxc(room, userId);
+          existing.avatarUrl = avatarMxc
+            ? (mxcUrlToHttp(mx, avatarMxc, useAuthentication, 96, 96) ?? undefined)
+            : existing.avatarUrl;
+        }
+        return;
+      }
+      seen.add(userId);
       const avatarMxc = getMemberAvatarMxc(room, userId);
       const avatarUrl = avatarMxc
         ? (mxcUrlToHttp(mx, avatarMxc, useAuthentication, 96, 96) ?? undefined)
@@ -107,6 +138,19 @@ function ContactsList() {
     });
     return result;
   }, [directRooms, mx, useAuthentication]);
+
+  // Warm the persistent media cache for contact avatars so they render
+  // instantly on subsequent visits instead of fetching on first paint.
+  useEffect(() => {
+    const urls = contacts.map((c) => c.avatarUrl).filter((u): u is string => !!u);
+    if (urls.length === 0) return undefined;
+    urls.forEach((url) => {
+      void fetchMediaBlob(url)
+        .then(() => undefined)
+        .catch(() => undefined);
+    });
+    return undefined;
+  }, [contacts]);
 
   return (
     <Box direction="Column" gap="300">
@@ -267,15 +311,7 @@ export function HomeScreen() {
             <PageContentCenter>
               <Box direction="Column" gap="700" style={{ maxWidth: toRem(964), width: '100%' }}>
                 <PageHeroSection>
-                  <PageHero
-                    icon={
-                      <Avatar size="500" radii="400">
-                        {composerIcon(House)}
-                      </Avatar>
-                    }
-                    title="Home"
-                    subTitle="Your rooms, all in one place."
-                  />
+                  <PageHero icon="" title="Home" subTitle="Your rooms, all in one place." />
                 </PageHeroSection>
 
                 <Box direction="Row" gap="500" alignItems="Start">

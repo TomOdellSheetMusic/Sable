@@ -87,6 +87,7 @@ function ContactsList() {
 
   const contacts = useMemo<Contact[]>(() => {
     const result: Contact[] = [];
+    const seen = new Set<string>();
     directRooms.forEach((roomId) => {
       const room = mx.getRoom(roomId);
       if (!room) return;
@@ -94,6 +95,25 @@ function ContactsList() {
       if (!other) return;
       const userId = other.userId;
       if (!userId || userId === mx.getUserId()) return;
+      // A DM that was later turned into a group room can still be tagged as a
+      // DM, so the same person may appear in more than one room. Show each
+      // person once, preferring the genuine 1:1 DM (exactly two joined
+      // members) so "chat" opens the real DM rather than the group room.
+      const isOneToOne = room.getJoinedMemberCount() === 2;
+      const existing = result.find((c) => c.userId === userId);
+      if (existing) {
+        if (isOneToOne) {
+          existing.roomId = roomId;
+          existing.name =
+            getMemberDisplayName(room, userId) ?? getMxIdLocalPart(userId) ?? userId;
+          const avatarMxc = getMemberAvatarMxc(room, userId);
+          existing.avatarUrl = avatarMxc
+            ? (mxcUrlToHttp(mx, avatarMxc, useAuthentication, 96, 96) ?? undefined)
+            : existing.avatarUrl;
+        }
+        return;
+      }
+      seen.add(userId);
       const avatarMxc = getMemberAvatarMxc(room, userId);
       const avatarUrl = avatarMxc
         ? (mxcUrlToHttp(mx, avatarMxc, useAuthentication, 96, 96) ?? undefined)

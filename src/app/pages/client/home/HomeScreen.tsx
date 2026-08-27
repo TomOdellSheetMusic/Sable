@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Avatar, Box, IconButton, Scroll, Text, toRem } from 'folds';
 import { useAtomValue } from 'jotai';
 import {
@@ -29,6 +29,7 @@ import { UserAvatar } from '$components/user-avatar';
 import { useRoomName } from '$hooks/useRoomMeta';
 import { useCallSession, useCallMembers } from '$hooks/useCall';
 import { useActiveRTCSessionIds } from '$hooks/useMatrixRTCSession';
+import { fetchMediaBlob } from '$utils/mediaTransport';
 import { SequenceCard } from '$components/sequence-card';
 
 type Contact = {
@@ -127,6 +128,19 @@ function ContactsList() {
     });
     return result;
   }, [directRooms, mx, useAuthentication]);
+
+  // Warm the persistent media cache for contact avatars so they render
+  // instantly on subsequent visits instead of fetching on first paint.
+  useEffect(() => {
+    const urls = contacts.map((c) => c.avatarUrl).filter((u): u is string => !!u);
+    if (urls.length === 0) return undefined;
+    urls.forEach((url) => {
+      void fetchMediaBlob(url)
+        .then(() => undefined)
+        .catch(() => undefined);
+    });
+    return undefined;
+  }, [contacts]);
 
   return (
     <Box direction="Column" gap="300">

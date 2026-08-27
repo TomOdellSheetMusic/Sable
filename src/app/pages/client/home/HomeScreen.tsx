@@ -23,6 +23,7 @@ import { useDirectRooms } from '$pages/client/direct/useDirectRooms';
 import { getDmOtherMember, getMemberAvatarMxc, getMemberDisplayName } from '$utils/room/display';
 import { getMxIdLocalPart, mxcUrlToHttp } from '$utils/matrix';
 import { useMediaAuthentication } from '$hooks/useMediaAuthentication';
+import { useUserProfile } from '$hooks/useUserProfile';
 import { useUserPresence, Presence, usePresenceLabel } from '$hooks/useUserPresence';
 import { PresenceBadge, AvatarPresence } from '$components/presence';
 import { UserAvatar } from '$components/user-avatar';
@@ -41,8 +42,19 @@ type Contact = {
 
 function ContactRow({ contact }: { contact: Contact }) {
   const label = usePresenceLabel();
+  const mx = useMatrixClient();
+  const useAuthentication = useMediaAuthentication();
   const { navigateRoom } = useRoomNavigate();
   const presence = useUserPresence(contact.userId);
+  // Fetch the user's global profile (independent of room membership, which
+  // sliding sync may not have loaded yet) so the avatar/name render without
+  // opening the room.
+  const profile = useUserProfile(contact.userId);
+  const avatarUrl =
+    profile.avatarUrl && !contact.avatarUrl
+      ? (mxcUrlToHttp(mx, profile.avatarUrl, useAuthentication, 96, 96) ?? undefined)
+      : contact.avatarUrl;
+  const name = profile.displayName || contact.name;
 
   if (!presence || presence.presence === Presence.Offline) return null;
 
@@ -53,15 +65,15 @@ function ContactRow({ contact }: { contact: Contact }) {
           <Avatar size="400" radii="400">
             <UserAvatar
               userId={contact.userId}
-              src={contact.avatarUrl}
-              alt={contact.name}
+              src={avatarUrl}
+              alt={name}
               renderFallback={() => userFallbackIcon('sm')}
             />
           </Avatar>
         </AvatarPresence>
         <Box grow="Yes" direction="Column" gap="100" style={{ minWidth: 0 }}>
           <Text size="L400" truncate>
-            {contact.name}
+            {name}
           </Text>
           <Text size="T200" priority="400" truncate>
             {presence.status || label[presence.presence]}
@@ -72,7 +84,7 @@ function ContactRow({ contact }: { contact: Contact }) {
           variant="SurfaceVariant"
           radii="400"
           onClick={() => navigateRoom(contact.roomId)}
-          aria-label={`Message ${contact.name}`}
+          aria-label={`Message ${name}`}
         >
           {sizedIcon(ChatCircleDots, '200')}
         </IconButton>

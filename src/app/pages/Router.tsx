@@ -70,7 +70,7 @@ import { ClientBindAtoms, ClientLayout, ClientRoot, ClientRouteOutlet } from './
 import { ShallowRouteRenderer } from './client/ShallowRouteRenderer';
 import { HandleNotificationClick, ClientNonUIFeatures } from './client/ClientNonUIFeatures';
 import { RoomRoute } from './client/RoomRoute';
-import { Home, HomeRouteRoomProvider, HomeSearch } from './client/home';
+import { Home, HomeRouteRoomProvider, HomeScreen, HomeSearch } from './client/home';
 import { Direct, DirectCreate, DirectRouteRoomProvider } from './client/direct';
 import { RouteSpaceProvider, Space, SpaceRouteRoomProvider, SpaceSearch } from './client/space';
 // Lazy-loaded: auth subtree, settings, inbox/bookmarks, explore
@@ -311,7 +311,7 @@ export const createRouter = (clientConfig: ClientConfig, screenSize: ScreenSize)
             </PageRoot>
           }
         >
-          {mobile ? null : <Route index element={<WelcomePage />} />}
+          <Route index element={<HomeScreen />} />
           {/* Superseded by CREATE_ROOM_PATH; kept so old links keep working. */}
           <Route path={CREATE_PATH_SEGMENT} loader={() => redirect(getCreateRoomPath())} />
           <Route path={JOIN_PATH_SEGMENT} element={<p>join</p>} />

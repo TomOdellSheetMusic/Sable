@@ -15,6 +15,8 @@ import {
 import { fetch } from '$utils/fetch';
 import { matrixFetch } from './matrixFetch';
 import { clearMediaCache } from '$utils/mediaCache';
+import { isTauri } from '@tauri-apps/api/core';
+import { engineWipe } from '$generated/tauri/commands';
 
 import { clearNavToActivePathStore } from '$state/navToActivePath';
 import type { Session, Sessions, SessionStoreName } from '$state/sessions';
@@ -33,6 +35,11 @@ import { pushSessionToSW } from '../sw-session';
 import { assertAuthMetadataIssuer, createSessionTokenRefresher } from './oidcTokenRefresher';
 import { revokeOAuthToken } from './oauthTokenRevocation';
 import { clearSecretStorageKeys, cryptoCallbacks } from './secretStorageKeys';
+import {
+  installRustCrypto,
+  isLegacyWasmCryptoStoreError,
+  rustEngineEnabled,
+} from '$app/crypto/install';
 import type { SlidingSyncDiagnostics } from './slidingSync';
 import {
   prepareSlidingSyncTimelines,
@@ -229,6 +236,41 @@ type SlidingSyncRequestWithConnId = MSC3575SlidingSyncRequest & {
 export const newSlidingSyncConnId = (): string =>
   `sable-${globalThis.crypto?.randomUUID?.().slice(0, 8) ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
 
+type CryptoWithDeviceListInvalidation = { markAllTrackedUsersAsDirty: () => Promise<void> };
+
+const coalesceDeviceListInvalidation = (mx: MatrixClient) => {
+  let invalidatedThisRun = false;
+  let patched: CryptoWithDeviceListInvalidation | undefined;
+  let restore: (() => void) | undefined;
+
+  const install = (invalidationAlreadyRan: boolean): void => {
+    const crypto = mx.getCrypto?.() as unknown as CryptoWithDeviceListInvalidation | undefined;
+    if (!crypto?.markAllTrackedUsersAsDirty || crypto === patched) return;
+
+    patched = crypto;
+    invalidatedThisRun = invalidationAlreadyRan;
+    const original = crypto.markAllTrackedUsersAsDirty.bind(crypto);
+    restore = () => {
+      crypto.markAllTrackedUsersAsDirty = original;
+    };
+    crypto.markAllTrackedUsersAsDirty = async () => {
+      if (invalidatedThisRun) return;
+      invalidatedThisRun = true;
+      await original();
+    };
+  };
+
+  install(false);
+
+  return {
+    onRequest: (pos: string | undefined) => install(pos === undefined),
+    onResponse: (pos: string | undefined) => {
+      if (pos !== undefined) invalidatedThisRun = false;
+    },
+    dispose: () => restore?.(),
+  };
+};
+
 export function installSlidingSyncRequestPatch(
   mx: MatrixClient,
   manager: SlidingSyncManager
@@ -236,6 +278,7 @@ export function installSlidingSyncRequestPatch(
   slidingSyncRequestCleanupByClient.get(mx)?.();
 
   const connId = newSlidingSyncConnId();
+  const deviceListInvalidation = coalesceDeviceListInvalidation(mx);
   const mxWritable = mx as MatrixClientWithWritableSlidingSync;
   const original = mx.slidingSync.bind(mx) as SlidingSyncMethod;
   mxWritable.slidingSync = async (reqBody, baseUrl, abortSignal) => {
@@ -257,8 +300,10 @@ export function installSlidingSyncRequestPatch(
 
     const roomIds = manager.getActiveRoomSubscriptionIds();
     scopeTypingExtension(req.extensions, roomIds);
+    deviceListInvalidation.onRequest(req.pos);
 
     const response = await original(reqBody, baseUrl, abortSignal);
+    deviceListInvalidation.onResponse(response.pos);
     trackResponse(response);
     // Must run before the SDK processes the response. A throw would reach the SDK's
     // loop, which drops the response and retries the same `pos` forever.
@@ -279,6 +324,7 @@ export function installSlidingSyncRequestPatch(
 
   slidingSyncRequestCleanupByClient.set(mx, () => {
     slidingSyncRequestCleanupByClient.delete(mx);
+    deviceListInvalidation.dispose();
     mxWritable.slidingSync = original;
   });
 }
@@ -297,6 +343,29 @@ const deleteSessionStores = async (storeName: SessionStoreName): Promise<void> =
     deleteDatabase(storeName.crypto),
     deleteDatabase(`${storeName.rustCryptoPrefix}::matrix-sdk-crypto`),
   ]);
+};
+
+const clearSessionCaches = (session: Session): void => {
+  SlidingSyncSidebarCache.clear(session.userId);
+  clearCachedVersions(session.baseUrl, session.userId);
+  clearCachedUserProfiles(session.userId);
+  clearSecretStorageKeys();
+};
+
+export const discardSessionStores = async (session: Session): Promise<void> => {
+  clearSessionCaches(session);
+  const storeName = getSessionStoreName(session);
+  await deleteSessionStores(storeName);
+  await wipeNativeCryptoStore(session);
+};
+
+const wipeNativeCryptoStore = async (session: Session): Promise<void> => {
+  if (!isTauri() || !session.deviceId) return;
+  try {
+    await engineWipe({ userId: session.userId, deviceId: session.deviceId });
+  } catch (error) {
+    log.warn('wipeNativeCryptoStore failed', session.userId, error);
+  }
 };
 
 const isMismatch = (err: unknown): boolean => {
@@ -371,9 +440,23 @@ const initializeClient = async (
   });
 
   const syncStorePromise = measureStartupPhase('sync_store', () => indexedDBStore.startup());
-  const cryptoPromise = measureStartupPhase('rust_crypto', () =>
-    mx.initRustCrypto({ cryptoDatabasePrefix })
-  );
+  const cryptoPromise = measureStartupPhase('rust_crypto', async () => {
+    let nativeEngine: boolean;
+    try {
+      nativeEngine = await rustEngineEnabled(cryptoDatabasePrefix);
+    } catch (error) {
+      if (!isLegacyWasmCryptoStoreError(error)) throw error;
+      await mx.initRustCrypto({ cryptoDatabasePrefix });
+      error.client = mx;
+      throw error;
+    }
+
+    if (nativeEngine) {
+      await installRustCrypto(mx);
+      return;
+    }
+    await mx.initRustCrypto({ cryptoDatabasePrefix });
+  });
   const [syncStoreResult, cryptoResult] = await Promise.allSettled([
     syncStorePromise,
     cryptoPromise,
@@ -384,7 +467,7 @@ const initializeClient = async (
     return { ok: false, error: syncStoreResult.reason, phase: 'sync_store' };
   }
   if (cryptoResult.status === 'rejected') {
-    mx.stopClient();
+    if (!isLegacyWasmCryptoStoreError(cryptoResult.reason)) mx.stopClient();
     return { ok: false, error: cryptoResult.reason, phase: 'rust_crypto' };
   }
 
@@ -742,17 +825,13 @@ export const logoutClient = async (mx: MatrixClient, session?: Session) => {
   }
 
   if (session) {
-    SlidingSyncSidebarCache.clear(session.userId);
-    clearCachedVersions(session.baseUrl, session.userId);
-    clearCachedUserProfiles(session.userId);
-    clearSecretStorageKeys();
+    clearSessionCaches(session);
     destroyLocalNotificationCache(session.userId);
     clearLocalNotificationCache(session.userId);
     const storeName: SessionStoreName = getSessionStoreName(session);
     await mx.clearStores({ cryptoDatabasePrefix: storeName.rustCryptoPrefix });
-    await deleteDatabase(storeName.sync);
-    await deleteDatabase(storeName.crypto);
-    await deleteDatabase(`${storeName.rustCryptoPrefix}::matrix-sdk-crypto`);
+    await deleteSessionStores(storeName);
+    await wipeNativeCryptoStore(session);
   } else {
     await mx.clearStores();
     window.localStorage.clear();

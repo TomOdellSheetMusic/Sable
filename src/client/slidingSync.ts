@@ -1836,8 +1836,6 @@ export class SlidingSyncManager {
         this.slidingSync.useCustomSubscription(roomId, CALL_ROOM_SUBSCRIPTION_KEY);
       } else if (this.activeRoomSubscriptions.has(roomId)) {
         this.slidingSync.useCustomSubscription(roomId, ACTIVE_ROOM_SUBSCRIPTION_KEY);
-      } else if (this.sidebarRoomSubscriptions.has(roomId)) {
-        this.slidingSync.useCustomSubscription(roomId, SIDEBAR_ROOM_SUBSCRIPTION_KEY);
       } else if (this.spaceSubscriptions.has(roomId)) {
         this.slidingSync.useCustomSubscription(
           roomId,
@@ -1845,6 +1843,10 @@ export class SlidingSyncManager {
             ? SPACE_IMAGE_PACK_SUBSCRIPTION_KEY
             : SPACE_SUBSCRIPTION_KEY
         );
+      } else if (this.sidebarRoomSubscriptions.has(roomId)) {
+        // Spaces need their child state even when their initial list data also
+        // placed them in the lightweight sidebar subscription.
+        this.slidingSync.useCustomSubscription(roomId, SIDEBAR_ROOM_SUBSCRIPTION_KEY);
       } else {
         this.slidingSync.useCustomSubscription(roomId, IMAGE_PACK_SUBSCRIPTION_KEY);
       }

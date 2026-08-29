@@ -27,6 +27,41 @@ import {
 } from './initMatrix';
 
 describe('installSlidingSyncRequestPatch', () => {
+  it('invalidates device lists once per pos-less run, not once per request', async () => {
+    const markAllTrackedUsersAsDirty = vi.fn<() => Promise<void>>(async () => undefined);
+    const crypto = { markAllTrackedUsersAsDirty };
+    let pos: string | undefined;
+    const original = vi.fn<() => Promise<never>>(async () => ({ pos }) as never);
+    const mx = {
+      slidingSync: original,
+      getRoom: () => undefined,
+      getCrypto: () => crypto,
+    } as unknown as MatrixClient;
+    const manager = {
+      isPaused: () => false,
+      getActiveRoomSubscriptionIds: () => new Set<string>(),
+      trackSubscriptionRequest: () => () => undefined,
+      sanitizeOptimisticJoinResponse: () => undefined,
+    };
+
+    installSlidingSyncRequestPatch(mx, manager as never);
+    const sync = (requestPos?: string) =>
+      mx.slidingSync({ extensions: {}, pos: requestPos } as never, '', undefined);
+
+    await sync(undefined);
+    await crypto.markAllTrackedUsersAsDirty();
+    await sync(undefined);
+    await crypto.markAllTrackedUsersAsDirty();
+    expect(markAllTrackedUsersAsDirty).toHaveBeenCalledTimes(1);
+
+    pos = 'p1';
+    await sync(undefined);
+    pos = undefined;
+    await sync('p1');
+    await crypto.markAllTrackedUsersAsDirty();
+    expect(markAllTrackedUsersAsDirty).toHaveBeenCalledTimes(2);
+  });
+
   it('normalizes expanded timelines before returning the response to the SDK', async () => {
     const response = {
       rooms: {

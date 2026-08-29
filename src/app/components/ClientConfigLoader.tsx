@@ -9,7 +9,7 @@ import { SplashScreen } from '$components/splash-screen';
 
 export const FALLBACK_CLIENT_CONFIG: ClientConfig = {
   defaultHomeserver: 0,
-  homeserverList: ['matrix.org'],
+  homeserverList: ['matrix.tachyonproductions.de'],
   allowCustomHomeservers: false,
   hashRouter: { enabled: false, basename: '/' },
 };

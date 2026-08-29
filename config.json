@@ -1,7 +1,7 @@
 {
   "productName": "Sable",
   "defaultHomeserver": 0,
-  "homeserverList": ["matrix.org", "mozilla.org", "unredacted.org", "sable.moe", "kendama.moe"],
+  "homeserverList": ["matrix.tachyonproductions.de", "matrix.org", "mozilla.org", "unredacted.org", "sable.moe", "kendama.moe"],
   "allowCustomHomeservers": true,
   "elementCallUrl": null,
 
@@ -22,6 +22,7 @@
   "featuredCommunities": {
     "openAsDefault": false,
     "spaces": [
+      "#gemuesesuppe:matrix.tachyonproductions.de",
       "#sable:sable.moe",
       "#community:matrix.org",
       "#space:unredacted.org",
@@ -30,6 +31,7 @@
       "#mathematics-on:matrix.org"
     ],
     "rooms": [
+      "#introduction:matrix.tachyonproductions.de",
       "#announcements:sable.moe",
       "#freesoftware:matrix.org",
       "#pcapdroid:matrix.org",
@@ -37,7 +39,7 @@
       "#PrivSec.dev:arcticfoxes.net",
       "#disroot:aria-net.org"
     ],
-    "servers": ["matrixrooms.info", "mozilla.org", "unredacted.org"]
+    "servers": ["matrix.tachyonproductions.de", "matrixrooms.info", "mozilla.org", "unredacted.org"]
   },
 
   "hashRouter": {

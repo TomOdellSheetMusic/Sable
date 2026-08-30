@@ -10,7 +10,7 @@ use matrix_sdk_crypto::OlmMachine;
 use serde_json::Value;
 
 use super::args::decryption_settings;
-use super::{account_key, engines, open_machine};
+use super::{account_key, engines};
 
 /// Returns the machine already registered for the account, opening one if the process is
 /// cold, and reports whether this call is what opened the store. Never evicts a machine
@@ -25,7 +25,13 @@ pub async fn open_machine_for_push(
         return Ok((machine, false));
     }
 
-    let (machine, _) = open_machine(dir, passphrase, user_id, device_id).await?;
+    let _guard = super::OPEN_GUARD.lock().await;
+
+    if let Ok(machine) = engines().machine(user_id, device_id) {
+        return Ok((machine, false));
+    }
+
+    let (machine, _) = super::open_machine_locked(dir, passphrase, user_id, device_id).await?;
     Ok((machine, true))
 }
 
@@ -128,6 +134,7 @@ mod tests {
     use matrix_sdk_sqlite::SqliteCryptoStore;
     use serde_json::json;
 
+    use super::super::open_machine;
     use super::*;
 
     fn temp_dir(name: &str) -> std::path::PathBuf {

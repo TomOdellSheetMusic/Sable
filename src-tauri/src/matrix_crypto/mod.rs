@@ -79,20 +79,33 @@ impl CryptoEngineState {
     }
 
     pub fn close_account_if(&self, account: &str, machine: &Arc<OlmMachine>) -> Result<(), String> {
-        let registered = self
-            .machines
+        let removed = {
+            let mut machines = self.machines.lock().map_err(|e| e.to_string())?;
+            match machines.get(account) {
+                Some(current) if Arc::ptr_eq(current, machine) => {
+                    machines.remove(account);
+                    true
+                }
+                _ => false,
+            }
+        };
+
+        if !removed {
+            return Ok(());
+        }
+
+        if let Some(listeners) = self
+            .listeners
             .lock()
             .map_err(|e| e.to_string())?
-            .get(account)
-            .cloned();
-
-        match registered {
-            Some(current) if Arc::ptr_eq(&current, machine) => {
-                self.close_account(account)?;
-                Ok(())
+            .remove(account)
+        {
+            for listener in listeners {
+                listener.abort();
             }
-            _ => Ok(()),
         }
+
+        Ok(())
     }
 }
 
@@ -168,6 +181,15 @@ pub async fn open_machine(
     device_id: &str,
 ) -> Result<(Arc<OlmMachine>, EngineInfo), String> {
     let _guard = OPEN_GUARD.lock().await;
+    open_machine_locked(dir, passphrase, user_id, device_id).await
+}
+
+pub(super) async fn open_machine_locked(
+    dir: &Path,
+    passphrase: Option<&str>,
+    user_id: &str,
+    device_id: &str,
+) -> Result<(Arc<OlmMachine>, EngineInfo), String> {
     let user: &matrix_sdk::ruma::UserId = user_id
         .try_into()
         .map_err(|e| format!("bad user id: {e}"))?;
@@ -298,6 +320,32 @@ mod tests {
             !account.contains(['/', ':', '|', '\\', '<', '>', '"', '?', '*']),
             "{account}"
         );
+    }
+
+    /// A cold push and the webview can both be opening the same account. The push must
+    /// never deregister a machine it did not itself open, or the webview's crypto dies
+    /// for the rest of the session.
+    #[tokio::test]
+    async fn close_account_if_leaves_a_machine_it_does_not_own() {
+        let user: &matrix_sdk::ruma::UserId = "@race:example.org".try_into().unwrap();
+        let device: &matrix_sdk::ruma::DeviceId = "RACEDEVICE".into();
+        let account = account_key(user.as_str(), device.as_str());
+
+        let mine = Arc::new(OlmMachine::new(user, device).await);
+        let theirs = Arc::new(OlmMachine::new(user, device).await);
+
+        let state = CryptoEngineState::default();
+        state
+            .machines
+            .lock()
+            .unwrap()
+            .insert(account.clone(), Arc::clone(&theirs));
+
+        state.close_account_if(&account, &mine).unwrap();
+        assert!(state.machine(user.as_str(), device.as_str()).is_ok());
+
+        state.close_account_if(&account, &theirs).unwrap();
+        assert!(state.machine(user.as_str(), device.as_str()).is_err());
     }
 
     #[tokio::test]

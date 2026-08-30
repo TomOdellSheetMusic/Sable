@@ -211,6 +211,8 @@ pub(super) async fn open_machine_locked(
             .await
             .map_err(|e| format!("creating OlmMachine failed: {e}"))?,
     );
+    machine.set_room_key_requests_enabled(false);
+
     let keys = machine.identity_keys();
 
     engines()
@@ -320,6 +322,26 @@ mod tests {
             !account.contains(['/', ':', '|', '\\', '<', '>', '"', '?', '*']),
             "{account}"
         );
+    }
+
+    /// Enabling `automatic-room-key-forwarding` also enables OUTGOING room key
+    /// requests, which upstream turns off (element-web#26524). The two must stay paired.
+    #[tokio::test]
+    async fn outgoing_room_key_requests_stay_disabled() {
+        let user: &matrix_sdk::ruma::UserId = "@gossip:example.org".try_into().unwrap();
+        let device: &matrix_sdk::ruma::DeviceId = "GOSSIPDEVICE".into();
+
+        let dir = std::env::temp_dir().join(format!("sable-gossip-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let (machine, _) = open_machine(&dir, None, user.as_str(), device.as_str())
+            .await
+            .unwrap();
+
+        assert!(!machine.are_room_key_requests_enabled());
+
+        let _ = engines().close_account(&account_key(user.as_str(), device.as_str()));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A cold push and the webview can both be opening the same account. The push must

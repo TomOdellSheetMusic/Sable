@@ -66,10 +66,11 @@ fn exportable_keys(sessions: Vec<BackedUpSession>) -> (Vec<ExportedRoomKey>, usi
     (exported, skipped)
 }
 
-fn import_result(result: RoomKeyImportResult) -> Value {
+fn import_result(result: RoomKeyImportResult, skipped: usize) -> Value {
     json!({
         "importedCount": result.imported_count,
         "totalCount": result.total_count,
+        "skippedCount": skipped,
         "keys": result.keys,
     })
 }
@@ -185,7 +186,7 @@ async fn handle(machine: &OlmMachine, method: &str, args: &Value) -> Result<Opti
                 .import_room_keys(exported, Some(&backup_version), ignore_progress)
                 .await
                 .map_err(|e| format!("importBackedUpRoomKeys failed: {e}"))?;
-            import_result(result)
+            import_result(result, skipped)
         }
         "importExportedRoomKeys" => {
             let keys: Vec<ExportedRoomKey> = serde_json::from_str(&str_arg(args, method, "keys")?)
@@ -195,7 +196,7 @@ async fn handle(machine: &OlmMachine, method: &str, args: &Value) -> Result<Opti
                 .import_exported_room_keys(keys, ignore_progress)
                 .await
                 .map_err(|e| format!("importExportedRoomKeys failed: {e}"))?;
-            import_result(result)
+            import_result(result, 0)
         }
         "exportRoomKeys" => {
             let keys = machine

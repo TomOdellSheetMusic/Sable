@@ -1135,21 +1135,27 @@ export class EngineCrypto
     backupVersion: string,
     opts?: ImportRoomKeysOpts,
     already = 0,
-    grandTotal = keys.length
-  ): Promise<number> {
+    grandTotal = keys.length,
+    alreadyFailed = 0
+  ): Promise<{ imported: number; processed: number; failures: number }> {
     const result = (await this.#call('importBackedUpRoomKeys', {
       keys: JSON.stringify(keys),
       backupVersion,
-    })) as { importedCount?: number; totalCount?: number } | null;
+    })) as { importedCount?: number; totalCount?: number; skippedCount?: number } | null;
 
-    const successes = already + (result?.importedCount ?? 0);
+    const processed = already + (result?.totalCount ?? 0);
+    const failures = alreadyFailed + (result?.skippedCount ?? 0);
     opts?.progressCallback?.({
       stage: ImportRoomKeyStage.LoadKeys,
-      successes,
-      failures: grandTotal - successes,
+      successes: processed,
+      failures,
       total: grandTotal,
     });
-    return result?.importedCount ?? 0;
+    return {
+      imported: result?.importedCount ?? 0,
+      processed: result?.totalCount ?? 0,
+      failures: result?.skippedCount ?? 0,
+    };
   }
 
   /** MSC4268. The engine encrypts; we upload; only the mxc URL goes back. */
@@ -2110,6 +2116,8 @@ export class EngineCrypto
       );
 
       let imported = 0;
+      let processed = 0;
+      let failures = 0;
       for (const [roomId, room] of rooms) {
         // eslint-disable-next-line no-await-in-loop
         const decrypted = await decryptor.decryptSessions(room.sessions ?? {});
@@ -2117,13 +2125,17 @@ export class EngineCrypto
 
         for (let start = 0; start < withRoom.length; start += RESTORE_CHUNK_SIZE) {
           // eslint-disable-next-line no-await-in-loop
-          imported += await this.#importBackedUpRoomKeys(
+          const chunk = await this.#importBackedUpRoomKeys(
             withRoom.slice(start, start + RESTORE_CHUNK_SIZE),
             keys.backupVersion,
             opts,
-            imported,
-            total
+            processed,
+            total,
+            failures
           );
+          imported += chunk.imported;
+          processed += chunk.processed;
+          failures += chunk.failures;
         }
       }
 

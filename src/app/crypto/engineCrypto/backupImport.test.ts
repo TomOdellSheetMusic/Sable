@@ -34,8 +34,22 @@ describe('importBackedUpRoomKeys', () => {
     expect(JSON.parse(args.keys)).toHaveLength(2);
   });
 
-  it('reports the counts the engine actually imported, not the counts requested', async () => {
-    mockInvoke.mockResolvedValueOnce({ importedCount: 1, totalCount: 2 });
+  it('counts keys the engine already held as processed, not as failures', async () => {
+    mockInvoke.mockResolvedValueOnce({ importedCount: 0, totalCount: 2, skippedCount: 0 });
+    const progressCallback = vi.fn<(stage: unknown) => void>();
+
+    await crypto().importBackedUpRoomKeys([session('a'), session('b')], '7', { progressCallback });
+
+    expect(progressCallback).toHaveBeenCalledWith({
+      stage: ImportRoomKeyStage.LoadKeys,
+      successes: 2,
+      failures: 0,
+      total: 2,
+    });
+  });
+
+  it('reports only the keys the engine could not read as failures', async () => {
+    mockInvoke.mockResolvedValueOnce({ importedCount: 1, totalCount: 1, skippedCount: 1 });
     const progressCallback = vi.fn<(stage: unknown) => void>();
 
     await crypto().importBackedUpRoomKeys([session('a'), session('b')], '7', { progressCallback });
@@ -48,14 +62,14 @@ describe('importBackedUpRoomKeys', () => {
     });
   });
 
-  it('falls back to the requested count when the engine reports nothing', async () => {
+  it('reports nothing processed when the engine reports nothing', async () => {
     mockInvoke.mockResolvedValueOnce(null);
     const progressCallback = vi.fn<(stage: unknown) => void>();
 
     await crypto().importBackedUpRoomKeys([session('a')], '7', { progressCallback });
 
     expect(progressCallback).toHaveBeenCalledWith(
-      expect.objectContaining({ successes: 0, failures: 1, total: 1 })
+      expect.objectContaining({ successes: 0, failures: 0, total: 1 })
     );
   });
 });

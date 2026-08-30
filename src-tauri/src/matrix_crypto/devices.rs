@@ -195,7 +195,7 @@ fn query_keys_for_users(machine: &OlmMachine, args: &Value, method: &str) -> Res
 
 async fn verify_device(machine: &OlmMachine, args: &Value, method: &str) -> Result<Value, String> {
     let Some(device) = device_for(machine, args, method).await? else {
-        return Ok(Value::Null);
+        return Err(format!("{method}: unknown device"));
     };
     let request = device
         .verify()
@@ -214,7 +214,7 @@ async fn set_local_trust(
         .and_then(Value::as_i64)
         .ok_or_else(|| format!("{method}: missing numeric argument `trustState`"))?;
     let Some(device) = device_for(machine, args, method).await? else {
-        return Ok(Value::Null);
+        return Err(format!("{method}: unknown device"));
     };
     device
         .set_local_trust(LocalTrust::from(trust))

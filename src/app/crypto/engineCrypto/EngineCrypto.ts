@@ -1388,7 +1388,7 @@ export class EngineCrypto
     userId: string = this.#identity.userId,
     downloadUncached = false
   ): Promise<boolean> {
-    if (downloadUncached) {
+    if (downloadUncached || userId === this.#identity.userId) {
       await this.#sendTracked(await this.#call('queryKeysForUsers', { users: [userId] }));
     }
     const identity = (await this.#call('getIdentity', { userId })) as EngineIdentityInfo | null;

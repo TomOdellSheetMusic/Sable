@@ -70,6 +70,7 @@ matrix-sdk = { version = "0.18", default-features = false, features = [
 # verification, so the engine needs it for parity with the wasm backend.
 matrix-sdk-crypto = { version = "0.18", features = [
   "qrcode",
+  "automatic-room-key-forwarding",
   "experimental-push-secrets",
 ], optional = true }
 # `bundled` compiles SQLite from source. Android's NDK ships no libsqlite3 to link

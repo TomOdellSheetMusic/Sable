@@ -76,7 +76,7 @@ enum ToDeviceEncryptionInfoSnapshot {
 fn processed_to_device_event_json(
     event: &ProcessedToDeviceEvent,
     verification_request: Option<Value>,
-) -> Result<Value, String> {
+) -> Option<Value> {
     let raw_event = event.as_raw().json().get();
 
     let snapshot = match event {
@@ -88,10 +88,10 @@ fn processed_to_device_event_json(
                     curve25519_public_key_base64,
                 } => curve25519_public_key_base64.as_str(),
                 _ => {
-                    return Err(
-                        "receiveSyncChanges: decrypted to-device event did not use Olm v1"
-                            .to_owned(),
-                    )
+                    log::warn!(
+                        "Dropping incoming to-device event with unrecognised encryption_info"
+                    );
+                    return None;
                 }
             };
 
@@ -132,12 +132,11 @@ fn processed_to_device_event_json(
         }
     };
 
-    let mut value = serde_json::to_value(snapshot)
-        .map_err(|e| format!("receiveSyncChanges: failed to serialize processed event: {e}"))?;
+    let mut value = serde_json::to_value(snapshot).ok()?;
     if let Some(request) = verification_request {
         value["verificationRequest"] = request;
     }
-    Ok(value)
+    Some(value)
 }
 
 mod decryption_error_code {
@@ -298,16 +297,17 @@ pub async fn invoke(machine: &OlmMachine, method: &str, args: Value) -> Result<V
                 .await
                 .map_err(|e| format!("receiveSyncChanges failed: {e}"))?;
 
-            processed
-                .iter()
-                .map(|event| {
-                    processed_to_device_event_json(
-                        event,
-                        verification_request_snapshot(machine, event),
-                    )
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map(Value::Array)
+            Ok(Value::Array(
+                processed
+                    .iter()
+                    .filter_map(|event| {
+                        processed_to_device_event_json(
+                            event,
+                            verification_request_snapshot(machine, event),
+                        )
+                    })
+                    .collect(),
+            ))
         }
 
         "outgoingRequests" => outgoing_requests(machine).await,

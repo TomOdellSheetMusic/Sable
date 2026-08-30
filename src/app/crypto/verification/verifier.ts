@@ -98,8 +98,11 @@ abstract class EngineVerifier<TState>
       this.completion.resolve();
       return;
     }
+    if (this.hasBeenCancelled) return;
     this.markCancelled();
-    this.completion.reject(new Error('Verification cancelled'));
+    const error = new Error('Verification cancelled');
+    this.completion.reject(error);
+    this.emit(VerifierEvent.Cancel, error);
   }
 
   abstract onChange(state: TState): void;
@@ -157,8 +160,7 @@ export class EngineSasVerifier extends EngineVerifier<SasState> {
     this.state = state;
 
     if (state.isCancelled) {
-      this.markCancelled();
-      this.completion.reject(new Error('Verification cancelled'));
+      this.settle(false);
       return;
     }
 
@@ -227,8 +229,7 @@ export class EngineQrVerifier extends EngineVerifier<QrState> {
     this.state = state;
 
     if (state.isCancelled) {
-      this.markCancelled();
-      this.completion.reject(new Error('Verification cancelled'));
+      this.settle(false);
       return;
     }
 
@@ -238,8 +239,7 @@ export class EngineQrVerifier extends EngineVerifier<QrState> {
           void this.call('qr.confirm', this.flow);
         },
         cancel: () => {
-          this.markCancelled();
-          void this.call('qr.cancel', { ...this.flow, code: 'm.user' });
+          this.cancelWithCode('m.user', new Error('Verification cancelled'));
         },
       };
       this.emit(VerifierEvent.ShowReciprocateQr, this.#callbacks);

@@ -11,6 +11,40 @@ import { EngineQrVerifier, EngineSasVerifier } from './verifier';
 const flow = { userId: '@them:e.org', flowId: '$f' };
 
 describe('EngineSasVerifier', () => {
+  it('emits Cancel when the other side cancels', async () => {
+    const call = vi.fn<(m: string, a?: Record<string, unknown>) => Promise<unknown>>(
+      async () => null
+    );
+    const verifier = new EngineSasVerifier(call, flow, {}, '@them:e.org');
+    const cancelled = vi.fn<(error: Error | MatrixEvent) => void>();
+    verifier.on(VerifierEvent.Cancel, cancelled);
+    const verifying = verifier.verify();
+
+    verifier.onChange({ isCancelled: true });
+
+    await expect(verifying).rejects.toThrow('Verification cancelled');
+    expect(cancelled).toHaveBeenCalledOnce();
+    expect(call.mock.calls.filter(([method]) => method === 'sas.cancel')).toHaveLength(0);
+  });
+
+  it('does not cancel twice when the engine echoes our own mismatch', async () => {
+    const call = vi.fn<(m: string, a?: Record<string, unknown>) => Promise<unknown>>(
+      async () => null
+    );
+    const verifier = new EngineSasVerifier(call, flow, {}, '@them:e.org');
+    const cancelled = vi.fn<(error: Error | MatrixEvent) => void>();
+    verifier.on(VerifierEvent.Cancel, cancelled);
+    const verifying = verifier.verify();
+
+    verifier.onChange({ decimals: [1, 2, 3] });
+    verifier.getShowSasCallbacks()?.mismatch();
+    verifier.onChange({ isCancelled: true });
+
+    await expect(verifying).rejects.toThrow('The codes did not match');
+    expect(cancelled).toHaveBeenCalledOnce();
+    expect(call.mock.calls.filter(([method]) => method === 'sas.cancel')).toHaveLength(1);
+  });
+
   it('settles the flow when the user says the codes do not match', async () => {
     const call = vi.fn<(method: string, args: unknown) => Promise<unknown>>(async () => null);
     const verifier = new EngineSasVerifier(call, flow, {}, '@them:e.org');
@@ -139,6 +173,20 @@ describe('EngineSasVerifier', () => {
 });
 
 describe('EngineQrVerifier', () => {
+  it('settles the flow when the user declines the reciprocated code', async () => {
+    const call = vi.fn<(m: string, a?: Record<string, unknown>) => Promise<unknown>>(
+      async () => null
+    );
+    const verifier = new EngineQrVerifier(call, flow, {}, '@them:e.org');
+    const verifying = verifier.verify();
+
+    verifier.onChange({ hasBeenScanned: true });
+    verifier.getReciprocateQrCodeCallbacks()?.cancel();
+
+    await expect(verifying).rejects.toThrow('Verification cancelled');
+    expect(call).toHaveBeenCalledWith('qr.cancel', expect.objectContaining({ code: 'm.user' }));
+  });
+
   it('offers reciprocate callbacks only once our code has been scanned', () => {
     const call = vi.fn<() => Promise<unknown>>(async () => null);
     const verifier = new EngineQrVerifier(call, flow, {}, '@them:e.org');

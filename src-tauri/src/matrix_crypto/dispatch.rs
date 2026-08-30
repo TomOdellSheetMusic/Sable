@@ -21,7 +21,7 @@ use serde_json::{json, Value};
 use matrix_sdk::deserialized_responses::{DeviceLinkProblem, VerificationLevel};
 use matrix_sdk_crypto::MegolmError;
 
-use super::args::{caller_decryption_settings, decryption_settings, room_id, str_arg};
+use super::args::{caller_decryption_settings, room_id, str_arg};
 use super::requests::{mark_request_sent, outgoing_requests};
 use super::wasm_enums::processed_to_device_event_type;
 
@@ -269,7 +269,7 @@ pub async fn invoke(machine: &OlmMachine, method: &str, args: Value) -> Result<V
                 })
                 .unwrap_or_default();
 
-            let fallback_keys: Vec<OneTimeKeyAlgorithm> = args
+            let fallback_keys: Option<Vec<OneTimeKeyAlgorithm>> = args
                 .get("unusedFallbackKeys")
                 .and_then(Value::as_array)
                 .map(|keys| {
@@ -277,8 +277,7 @@ pub async fn invoke(machine: &OlmMachine, method: &str, args: Value) -> Result<V
                         .filter_map(Value::as_str)
                         .map(OneTimeKeyAlgorithm::from)
                         .collect()
-                })
-                .unwrap_or_default();
+                });
 
             let (processed, _room_keys) = machine
                 .receive_sync_changes(
@@ -286,13 +285,13 @@ pub async fn invoke(machine: &OlmMachine, method: &str, args: Value) -> Result<V
                         to_device_events,
                         changed_devices: &device_lists,
                         one_time_keys_counts: &key_counts,
-                        unused_fallback_keys: Some(&fallback_keys),
+                        unused_fallback_keys: fallback_keys.as_deref(),
                         next_batch_token: args
                             .get("nextBatchToken")
                             .and_then(Value::as_str)
                             .map(str::to_owned),
                     },
-                    &decryption_settings(),
+                    &caller_decryption_settings(&args),
                 )
                 .await
                 .map_err(|e| format!("receiveSyncChanges failed: {e}"))?;

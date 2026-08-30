@@ -33,6 +33,7 @@ import {
   DecryptionKeyDoesNotMatchError,
 } from 'matrix-js-sdk/lib/crypto-api';
 import { DecryptionError } from 'matrix-js-sdk/lib/common-crypto/CryptoBackend';
+import { secretStorageCanAccessSecrets } from './secretStorageAccess';
 import type { CryptoEventHandlerMap } from 'matrix-js-sdk/lib/crypto-api/CryptoEventHandlerMap';
 import { createDebugLogger } from '$utils/debugLogger';
 import { EngineVerificationRequest } from '../verification/request';
@@ -1678,7 +1679,8 @@ export class EngineCrypto
 
     const entries = await Promise.all(
       names.map(
-        async (name) => [name, Boolean(await this.#mx.secretStorage.isStored(name))] as const
+        async (name) =>
+          [name, await secretStorageCanAccessSecrets(this.#mx.secretStorage, [name])] as const
       )
     );
     const secretStorageKeyValidityMap = Object.fromEntries(entries);
@@ -1721,13 +1723,13 @@ export class EngineCrypto
       hasSelfSigning: boolean;
       hasUserSigning: boolean;
     };
-    const inStorage = await Promise.all(
-      SECRETS_IN_STORAGE.map(async (name) => Boolean(await this.#mx.secretStorage.isStored(name)))
-    );
+    const inStorage = await secretStorageCanAccessSecrets(this.#mx.secretStorage, [
+      ...SECRETS_IN_STORAGE,
+    ]);
 
     return {
       publicKeysOnDevice: status.hasMaster && status.hasSelfSigning && status.hasUserSigning,
-      privateKeysInSecretStorage: inStorage.every(Boolean),
+      privateKeysInSecretStorage: inStorage,
       privateKeysCachedLocally: {
         masterKey: status.hasMaster,
         selfSigningKey: status.hasSelfSigning,

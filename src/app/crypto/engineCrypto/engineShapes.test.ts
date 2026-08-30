@@ -9,10 +9,15 @@ vi.mock('../olmMachine/engineInvoke', () => ({
 
 const mockInvoke = vi.mocked(engineInvoke);
 
-const crypto = (stored: string[] = []) =>
+const DEFAULT_KEY_ID = 'default-key';
+
+const crypto = (stored: string[] = [], keyId: string = DEFAULT_KEY_ID) =>
   new EngineCrypto(
     {
-      secretStorage: { isStored: async (name: string) => (stored.includes(name) ? {} : null) },
+      secretStorage: {
+        getDefaultKeyId: async () => DEFAULT_KEY_ID,
+        isStored: async (name: string) => (stored.includes(name) ? { [keyId]: {} } : null),
+      },
     } as unknown as MatrixClient,
     { userId: '@me:example.org', deviceId: 'DEVICE' }
   );
@@ -129,6 +134,20 @@ describe('engine payload shapes', () => {
     });
     await expect(
       crypto(CROSS_SIGNING_SECRETS.slice(0, 2)).getCrossSigningStatus()
+    ).resolves.toMatchObject({ privateKeysInSecretStorage: false });
+  });
+
+  // A secret left behind under a rotated-away 4S key is not recoverable, so reporting it
+  // as held would tell the user their keys are safe when they are not.
+  it('does not count secrets stored under a key that is no longer the default', async () => {
+    mockInvoke.mockResolvedValue({
+      hasMaster: false,
+      hasSelfSigning: false,
+      hasUserSigning: false,
+    });
+
+    await expect(
+      crypto(CROSS_SIGNING_SECRETS, 'rotated-away-key').getCrossSigningStatus()
     ).resolves.toMatchObject({ privateKeysInSecretStorage: false });
   });
 });

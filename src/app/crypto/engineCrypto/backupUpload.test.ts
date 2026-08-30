@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as RustSdkCryptoJs from '@matrix-org/matrix-sdk-crypto-wasm';
 import { CryptoEvent } from 'matrix-js-sdk/lib/crypto-api';
+import { SECRET_STORAGE_ALGORITHM_V1_AES } from 'matrix-js-sdk/lib/secret-storage';
 import type { MatrixClient } from '$types/matrix-sdk';
 import { engineInvoke } from '../olmMachine/engineInvoke';
 import { EngineCrypto } from './EngineCrypto';
@@ -109,6 +110,20 @@ describe('key backup upload', () => {
   });
 });
 
+function clientWithSecretStorage(key: unknown) {
+  const store = vi.fn<(name: string, value: string) => Promise<void>>(async () => undefined);
+  const getKey = vi.fn<() => Promise<unknown>>(async () => key);
+  const mx = {
+    http: {
+      authedRequest: vi.fn<(...args: never[]) => Promise<unknown>>(async () => ({
+        version: '8',
+      })),
+    },
+    secretStorage: { store, getKey },
+  } as unknown as MatrixClient;
+  return { mx, store };
+}
+
 describe('resetKeyBackup', () => {
   beforeAll(() => RustSdkCryptoJs.initAsync());
 
@@ -120,15 +135,10 @@ describe('resetKeyBackup', () => {
       if (method === 'backupVersion') return null;
       return null;
     });
-    const store = vi.fn<(name: string, value: string) => Promise<void>>(async () => undefined);
-    const mx = {
-      http: {
-        authedRequest: vi.fn<(...args: never[]) => Promise<unknown>>(async () => ({
-          version: '8',
-        })),
-      },
-      secretStorage: { store },
-    } as unknown as MatrixClient;
+    const { mx, store } = clientWithSecretStorage([
+      'key-id',
+      { algorithm: SECRET_STORAGE_ALGORITHM_V1_AES },
+    ]);
 
     await new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' }).resetKeyBackup();
 
@@ -141,5 +151,19 @@ describe('resetKeyBackup', () => {
     });
     expect(invoked('getMissingSessions')[0]?.[2]).toMatchObject({ users: ['@me:e.org'] });
     expect(store).toHaveBeenCalledWith('m.megolm_backup.v1', expect.any(String));
+  });
+
+  it('does not write the backup key to secret storage when 4S is not set up', async () => {
+    mockInvoke.mockImplementation(async (_identity, method) => {
+      if (method === 'isBackupEnabled') return false;
+      if (method === 'backupVersion') return null;
+      return null;
+    });
+    const { mx, store } = clientWithSecretStorage(null);
+
+    await new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' }).resetKeyBackup();
+
+    expect(invoked('pushSecretToVerifiedDevices')).toHaveLength(1);
+    expect(store).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,9 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { createDebugLogger } from '$utils/debugLogger';
 import type { EngineIdentity } from '../olmMachine/engineInvoke';
 import type { EngineCrypto } from './EngineCrypto';
+
+const eventBridgeLog = createDebugLogger('crypto');
 
 const ROOM_KEYS_RECEIVED = 'matrix-crypto://room-keys-received';
 const ROOM_KEYS_WITHHELD = 'matrix-crypto://room-keys-withheld';
@@ -43,7 +46,9 @@ export const startCryptoEventBridge = async (
     listen<Envelope<{ name: string }>>(
       SECRET_RECEIVED,
       forAccount<{ name: string }>(({ name }) => {
-        crypto.checkSecrets(name).catch(() => undefined);
+        crypto.checkSecrets(name).catch((error: unknown) => {
+          eventBridgeLog.warn('general', `Failed to handle gossiped secret ${name}`, error);
+        });
       })
     ),
   ]);

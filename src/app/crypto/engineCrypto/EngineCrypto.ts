@@ -378,7 +378,10 @@ export class EngineCrypto
       if (this.#stopped) return;
       // eslint-disable-next-line no-await-in-loop
       const request = (await this.#call('backupRoomKeys')) as OutgoingRequest | null;
-      if (!request) break;
+      if (!request) {
+        this.emit(CryptoEvent.KeyBackupSessionsRemaining, 0);
+        return;
+      }
 
       try {
         // eslint-disable-next-line no-await-in-loop
@@ -402,8 +405,6 @@ export class EngineCrypto
       const counts = (await this.#call('roomKeyCounts')) as { total: number; backedUp: number };
       this.emit(CryptoEvent.KeyBackupSessionsRemaining, counts.total - counts.backedUp);
     }
-
-    this.emit(CryptoEvent.KeyBackupSessionsRemaining, 0);
   }
 
   async #recoverFromBackupUploadError(error: unknown): Promise<boolean> {
@@ -2003,7 +2004,16 @@ export class EngineCrypto
     await this.#call('enableBackupV1', { publicKeyBase64: publicKey, version: created.version });
     await this.storeSessionBackupPrivateKey(key.privateKey, created.version);
     await this.#pushSecretToVerifiedDevices('m.megolm_backup.v1');
-    await this.#mx.secretStorage.store('m.megolm_backup.v1', encodeBase64(key.privateKey));
+    if (await this.#secretStorageHasAesKey()) {
+      await this.#mx.secretStorage.store('m.megolm_backup.v1', encodeBase64(key.privateKey));
+    }
+  }
+
+  async #secretStorageHasAesKey(): Promise<boolean> {
+    const stored = await this.#mx.secretStorage.getKey();
+    if (!stored) return false;
+    const [, keyInfo] = stored;
+    return keyInfo.algorithm === SECRET_STORAGE_ALGORITHM_V1_AES;
   }
 
   async #signatureFor(value: Record<string, unknown>): Promise<Record<string, unknown> | null> {

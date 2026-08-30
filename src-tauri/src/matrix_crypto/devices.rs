@@ -22,7 +22,7 @@ fn device_id(args: &Value, method: &str) -> Result<OwnedDeviceId, String> {
 fn timeout(args: &Value) -> Option<Duration> {
     args.get("timeoutSecs")
         .and_then(Value::as_f64)
-        .map(Duration::from_secs_f64)
+        .and_then(|secs| Duration::try_from_secs_f64(secs).ok())
 }
 
 fn signatures_json(signatures: &Signatures, method: &str) -> Result<Value, String> {
@@ -326,4 +326,29 @@ pub async fn invoke(
 
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::timeout;
+    use serde_json::json;
+    use std::time::Duration;
+
+    /// `timeoutSecs` arrives verbatim from the webview, and `Duration::from_secs_f64`
+    /// panics on negative, non-finite or overflowing values.
+    #[test]
+    fn an_unusable_timeout_is_ignored_rather_than_panicking() {
+        for secs in [-1.0, f64::NAN, f64::INFINITY, 1e300] {
+            assert_eq!(timeout(&json!({ "timeoutSecs": secs })), None);
+        }
+    }
+
+    #[test]
+    fn a_usable_timeout_is_kept() {
+        assert_eq!(
+            timeout(&json!({ "timeoutSecs": 10.0 })),
+            Some(Duration::from_secs(10))
+        );
+        assert_eq!(timeout(&json!({})), None);
+    }
 }

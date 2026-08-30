@@ -6454,7 +6454,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-util",
- "h2 0.4.15",
+ "h2 0.4.16",
  "http 1.5.0",
  "http-body 1.1.0",
  "http-body-util",

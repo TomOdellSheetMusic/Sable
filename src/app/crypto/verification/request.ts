@@ -42,6 +42,8 @@ export class EngineVerificationRequest
 
   #declining = false;
 
+  #sasAccepted = false;
+
   constructor(call: EngineCall, state: EngineVerificationState) {
     super();
     this.#call = call;
@@ -72,7 +74,11 @@ export class EngineVerificationRequest
           ? 'Qr'
           : undefined;
 
-    if (current !== wanted) {
+    const accepted = (verification as SasState).hasBeenAccepted === true;
+    const lostTieBreak = wanted === 'Sas' && current === 'Sas' && this.#sasAccepted && !accepted;
+    this.#sasAccepted = wanted === 'Sas' ? accepted : false;
+
+    if (current !== wanted || lostTieBreak) {
       if (wanted === 'Sas') {
         this.#verifier = new EngineSasVerifier(
           this.#call,
@@ -80,7 +86,7 @@ export class EngineVerificationRequest
           verification as SasState,
           this.#state.otherUserId
         );
-        if (current !== undefined) void this.#reaccept();
+        if (current !== undefined || lostTieBreak) void this.#reaccept();
       } else if (wanted === 'Qr') {
         this.#verifier = new EngineQrVerifier(
           this.#call,

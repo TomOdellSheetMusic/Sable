@@ -13,6 +13,8 @@ export type EngineCall = (method: string, args?: Record<string, unknown>) => Pro
 
 export type SasState = {
   className?: string;
+  weStarted?: boolean;
+  hasBeenAccepted?: boolean;
   canBePresented?: boolean;
   haveWeConfirmed?: boolean;
   isDone?: boolean;

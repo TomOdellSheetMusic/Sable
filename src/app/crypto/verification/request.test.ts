@@ -30,6 +30,50 @@ const state = (patch: Partial<EngineVerificationState> = {}): EngineVerification
 });
 
 describe('EngineVerificationRequest', () => {
+  // Both sides press verify at the same moment; the loser's Sas is replaced by a fresh
+  // one that has not been accepted, and must be re-accepted or the flow hangs.
+  it('re-accepts when our SAS is replaced after losing the start tie-break', async () => {
+    const call = vi.fn<(m: string, a?: Record<string, unknown>) => Promise<unknown>>(
+      async () => null
+    );
+    const started = state({
+      phase: EnginePhase.Transitioned,
+      verification: { className: 'Sas', hasBeenAccepted: true },
+    });
+    const request = new EngineVerificationRequest(call, started);
+    call.mockClear();
+
+    request.apply(
+      state({
+        phase: EnginePhase.Transitioned,
+        verification: { className: 'Sas', hasBeenAccepted: false },
+      })
+    );
+
+    expect(call.mock.calls.filter(([method]) => method === 'sas.accept')).toHaveLength(1);
+  });
+
+  it('does not re-accept while the same SAS stays accepted', async () => {
+    const call = vi.fn<(m: string, a?: Record<string, unknown>) => Promise<unknown>>(
+      async () => null
+    );
+    const started = state({
+      phase: EnginePhase.Transitioned,
+      verification: { className: 'Sas', hasBeenAccepted: true },
+    });
+    const request = new EngineVerificationRequest(call, started);
+    call.mockClear();
+
+    request.apply(
+      state({
+        phase: EnginePhase.Transitioned,
+        verification: { className: 'Sas', hasBeenAccepted: true },
+      })
+    );
+
+    expect(call.mock.calls.filter(([method]) => method === 'sas.accept')).toHaveLength(0);
+  });
+
   it('accepts advertising every method we support, not the empty set the engine reports', async () => {
     const call = vi.fn<(m: string, a?: Record<string, unknown>) => Promise<unknown>>(
       async (method) =>

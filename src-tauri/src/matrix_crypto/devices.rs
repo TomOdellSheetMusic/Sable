@@ -330,9 +330,41 @@ pub async fn invoke(
 
 #[cfg(test)]
 mod tests {
-    use super::timeout;
+    use super::{invoke, timeout};
+    use matrix_sdk_crypto::OlmMachine;
     use serde_json::json;
     use std::time::Duration;
+
+    async fn machine() -> OlmMachine {
+        let user: &matrix_sdk::ruma::UserId = "@me:example.org".try_into().unwrap();
+        OlmMachine::new(user, "MYDEVICE".into()).await
+    }
+
+    /// Returning success for a device we do not know lets the UI report that a device was
+    /// verified or cross-signed when nothing was signed at all.
+    #[tokio::test]
+    async fn verifying_an_unknown_device_is_an_error() {
+        let machine = machine().await;
+        let args = json!({ "userId": "@me:example.org", "deviceId": "NOSUCHDEVICE" });
+
+        let result = invoke(&machine, "device.verify", &args).await;
+
+        assert!(matches!(result, Some(Err(_))));
+    }
+
+    #[tokio::test]
+    async fn trusting_an_unknown_device_is_an_error() {
+        let machine = machine().await;
+        let args = json!({
+            "userId": "@me:example.org",
+            "deviceId": "NOSUCHDEVICE",
+            "trustState": 1,
+        });
+
+        let result = invoke(&machine, "device.setLocalTrust", &args).await;
+
+        assert!(matches!(result, Some(Err(_))));
+    }
 
     /// `timeoutSecs` arrives verbatim from the webview, and `Duration::from_secs_f64`
     /// panics on negative, non-finite or overflowing values.

@@ -247,7 +247,11 @@ export class EngineVerificationRequest
     await this.#call('verificationRequest.startSas', this.#flow);
     await this.refresh();
 
-    if (!this.#verifier) throw new Error(`Starting ${method} produced no verifier`);
+    if (!this.#verifier) {
+      throw new Error(
+        `Could not start ${method}: the other device is no longer available for verification`
+      );
+    }
     return this.#verifier;
   }
 

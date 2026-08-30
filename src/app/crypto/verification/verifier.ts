@@ -107,8 +107,17 @@ abstract class EngineVerifier<TState>
   abstract verify(): Promise<void>;
 
   cancel(error: Error): void {
+    this.finishCancelled(this.flow, error);
+  }
+
+  protected cancelWithCode(code: string, error: Error): void {
+    this.finishCancelled({ ...this.flow, code }, error);
+  }
+
+  private finishCancelled(flow: Record<string, unknown>, error: Error): void {
+    if (this.hasBeenCancelled) return;
     this.markCancelled();
-    void this.call(this.cancelMethod, this.flow);
+    void this.call(this.cancelMethod, flow);
     this.completion.reject(error);
     this.emit(VerifierEvent.Cancel, error);
   }
@@ -169,12 +178,10 @@ export class EngineSasVerifier extends EngineVerifier<SasState> {
         await this.call('sas.confirm', this.flow);
       },
       mismatch: () => {
-        this.markCancelled();
-        void this.call('sas.cancel', { ...this.flow, code: 'm.mismatched_sas' });
+        this.cancelWithCode('m.mismatched_sas', new Error('The codes did not match'));
       },
       cancel: () => {
-        this.markCancelled();
-        void this.call('sas.cancel', { ...this.flow, code: 'm.user' });
+        this.cancelWithCode('m.user', new Error('Verification cancelled'));
       },
     };
   }

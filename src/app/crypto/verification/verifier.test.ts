@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   VerificationPhase,
   VerifierEvent,
+  type MatrixEvent,
   type ShowQrCodeCallbacks,
   type ShowSasCallbacks,
 } from '$types/matrix-sdk';
@@ -10,6 +11,43 @@ import { EngineQrVerifier, EngineSasVerifier } from './verifier';
 const flow = { userId: '@them:e.org', flowId: '$f' };
 
 describe('EngineSasVerifier', () => {
+  it('settles the flow when the user says the codes do not match', async () => {
+    const call = vi.fn<(method: string, args: unknown) => Promise<unknown>>(async () => null);
+    const verifier = new EngineSasVerifier(call, flow, {}, '@them:e.org');
+    const cancelled = vi.fn<(error: Error | MatrixEvent) => void>();
+    verifier.on(VerifierEvent.Cancel, cancelled);
+    const completion = verifier.verify();
+
+    verifier.onChange({
+      emoji: [{ symbol: '🐶', description: 'Dog' }],
+      decimals: [1, 2, 3],
+    });
+    verifier.getShowSasCallbacks()?.mismatch();
+
+    await expect(completion).rejects.toThrow('The codes did not match');
+    expect(cancelled).toHaveBeenCalledOnce();
+    expect(call).toHaveBeenCalledWith(
+      'sas.cancel',
+      expect.objectContaining({ code: 'm.mismatched_sas' })
+    );
+  });
+
+  it('does not send a second cancel when the user double taps', async () => {
+    const call = vi.fn<(method: string, args: unknown) => Promise<unknown>>(async () => null);
+    const verifier = new EngineSasVerifier(call, flow, {}, '@them:e.org');
+    verifier.verify().catch(() => undefined);
+
+    verifier.onChange({
+      emoji: [{ symbol: '🐶', description: 'Dog' }],
+      decimals: [1, 2, 3],
+    });
+    const callbacks = verifier.getShowSasCallbacks();
+    callbacks?.cancel();
+    callbacks?.cancel();
+
+    expect(call.mock.calls.filter(([method]) => method === 'sas.cancel')).toHaveLength(1);
+  });
+
   // Reading the digits straight after accepting yields nothing: they arrive later.
   it('emits ShowSas when the digits arrive, not when accept is sent', async () => {
     const call = vi.fn<() => Promise<unknown>>(async () => null);

@@ -28,7 +28,10 @@ import type { RoomMessageEventContent } from 'matrix-js-sdk/lib/types';
 import { encodeUri } from 'matrix-js-sdk/lib/utils';
 import { TypedEventEmitter } from 'matrix-js-sdk/lib/models/typed-event-emitter';
 import { CryptoEvent, DeviceIsolationModeKind } from 'matrix-js-sdk/lib/crypto-api';
-import { DecryptionFailureCode } from 'matrix-js-sdk/lib/crypto-api';
+import {
+  DecryptionFailureCode,
+  DecryptionKeyDoesNotMatchError,
+} from 'matrix-js-sdk/lib/crypto-api';
 import { DecryptionError } from 'matrix-js-sdk/lib/common-crypto/CryptoBackend';
 import type { CryptoEventHandlerMap } from 'matrix-js-sdk/lib/crypto-api/CryptoEventHandlerMap';
 import { createDebugLogger } from '$utils/debugLogger';
@@ -1894,7 +1897,27 @@ export class EngineCrypto
     const backupInfo = await this.#requestKeyBackupVersion();
     if (!backupInfo?.version) throw new Error('No key backup version to attach the key to');
 
+    if (!EngineCrypto.#keyMatchesBackup(encoded, backupInfo)) {
+      throw new DecryptionKeyDoesNotMatchError(
+        'loadSessionBackupPrivateKeyFromSecretStorage: decryption key does not match backup info'
+      );
+    }
+
     await this.storeSessionBackupPrivateKey(decodeBase64(encoded), backupInfo.version);
+  }
+
+  static #keyMatchesBackup(encoded: string, backupInfo: KeyBackupInfo): boolean {
+    const publicKey = (backupInfo.auth_data as { public_key?: string } | undefined)?.public_key;
+    try {
+      const key = RustSdkCryptoJs.BackupDecryptionKey.fromBase64(encoded);
+      try {
+        return key.megolmV1PublicKey.publicKeyBase64 === publicKey;
+      } finally {
+        key.free();
+      }
+    } catch {
+      return false;
+    }
   }
 
   async getActiveSessionBackupVersion(): Promise<string | null> {

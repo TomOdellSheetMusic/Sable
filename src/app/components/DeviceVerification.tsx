@@ -173,7 +173,7 @@ function SasVerification({ verifier, onCancel }: SasVerificationProps) {
   useVerifierCancel(verifier, onCancel);
 
   useEffect(() => {
-    verifier.verify();
+    verifier.verify().catch(() => undefined);
   }, [verifier]);
 
   if (sasData) {

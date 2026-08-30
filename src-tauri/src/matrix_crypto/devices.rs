@@ -340,8 +340,6 @@ mod tests {
         OlmMachine::new(user, "MYDEVICE".into()).await
     }
 
-    /// Returning success for a device we do not know lets the UI report that a device was
-    /// verified or cross-signed when nothing was signed at all.
     #[tokio::test]
     async fn verifying_an_unknown_device_is_an_error() {
         let machine = machine().await;
@@ -366,8 +364,6 @@ mod tests {
         assert!(matches!(result, Some(Err(_))));
     }
 
-    /// `timeoutSecs` arrives verbatim from the webview, and `Duration::from_secs_f64`
-    /// panics on negative, non-finite or overflowing values.
     #[test]
     fn an_unusable_timeout_is_ignored_rather_than_panicking() {
         for secs in [-1.0, f64::NAN, f64::INFINITY, 1e300] {

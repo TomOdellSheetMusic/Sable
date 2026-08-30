@@ -324,8 +324,6 @@ mod tests {
         );
     }
 
-    /// Enabling `automatic-room-key-forwarding` also enables OUTGOING room key
-    /// requests, which upstream turns off (element-web#26524). The two must stay paired.
     #[tokio::test]
     async fn outgoing_room_key_requests_stay_disabled() {
         let user: &matrix_sdk::ruma::UserId = "@gossip:example.org".try_into().unwrap();
@@ -344,9 +342,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A cold push and the webview can both be opening the same account. The push must
-    /// never deregister a machine it did not itself open, or the webview's crypto dies
-    /// for the rest of the session.
     #[tokio::test]
     async fn close_account_if_leaves_a_machine_it_does_not_own() {
         let user: &matrix_sdk::ruma::UserId = "@race:example.org".try_into().unwrap();

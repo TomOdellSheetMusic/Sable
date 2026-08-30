@@ -5,7 +5,9 @@ import type { MatrixClient } from '$types/matrix-sdk';
 import { engineInvoke } from '../olmMachine/engineInvoke';
 import { EngineCrypto } from './EngineCrypto';
 
-vi.mock('../olmMachine/engineInvoke', () => ({ engineInvoke: vi.fn() }));
+vi.mock('../olmMachine/engineInvoke', () => ({
+  engineInvoke: vi.fn<(...args: never[]) => Promise<unknown>>(),
+}));
 
 const mockInvoke = vi.mocked(engineInvoke);
 
@@ -13,7 +15,7 @@ const clientWith = (encoded: string, publicKey: string) =>
   ({
     secretStorage: { get: async () => encoded },
     http: {
-      authedRequest: vi.fn(async () => ({
+      authedRequest: vi.fn<(...args: never[]) => Promise<unknown>>(async () => ({
         version: '3',
         algorithm: 'm.megolm_backup.v1.curve25519-aes-sha2',
         auth_data: { public_key: publicKey },

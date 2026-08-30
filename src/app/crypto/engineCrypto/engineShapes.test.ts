@@ -137,8 +137,6 @@ describe('engine payload shapes', () => {
     ).resolves.toMatchObject({ privateKeysInSecretStorage: false });
   });
 
-  // A secret left behind under a rotated-away 4S key is not recoverable, so reporting it
-  // as held would tell the user their keys are safe when they are not.
   it('does not count secrets stored under a key that is no longer the default', async () => {
     mockInvoke.mockResolvedValue({
       hasMaster: false,

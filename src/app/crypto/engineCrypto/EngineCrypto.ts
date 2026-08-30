@@ -34,6 +34,7 @@ import {
 } from 'matrix-js-sdk/lib/crypto-api';
 import { DecryptionError } from 'matrix-js-sdk/lib/common-crypto/CryptoBackend';
 import { secretStorageCanAccessSecrets } from './secretStorageAccess';
+import { PerSessionBackupDownloader } from './perSessionBackupDownload';
 import type { CryptoEventHandlerMap } from 'matrix-js-sdk/lib/crypto-api/CryptoEventHandlerMap';
 import { createDebugLogger } from '$utils/debugLogger';
 import { EngineVerificationRequest } from '../verification/request';
@@ -357,10 +358,17 @@ export class EngineCrypto
 
   readonly #eventsPendingKey = new Map<string, Set<MatrixEvent>>();
 
+  readonly #backupDownloader: PerSessionBackupDownloader;
+
   constructor(mx: MatrixClient, identity: EngineIdentity) {
     super();
     this.#mx = mx;
     this.#identity = identity;
+    this.#backupDownloader = new PerSessionBackupDownloader({
+      mx,
+      importSession: (roomId, session) => this.#importBackedUpSession(roomId, session),
+      now: () => Date.now(),
+    });
     // Nothing else drives the backup connection.
     void this.#connectKeyBackup();
   }
@@ -500,6 +508,33 @@ export class EngineCrypto
     const pending = this.#eventsPendingKey.get(key) ?? new Set<MatrixEvent>();
     pending.add(event);
     this.#eventsPendingKey.set(key, pending);
+
+    this.#backupDownloader.request({ roomId, sessionId });
+  }
+
+  async #importBackedUpSession(roomId: string, session: KeyBackupSession): Promise<boolean> {
+    const backupInfo = await this.getKeyBackupInfo().catch(() => null);
+    if (!backupInfo?.version) return false;
+
+    const stored = await this.#call('getBackupKeys');
+    const privateKey = (stored as { decryptionKeyBase64?: string } | null)?.decryptionKeyBase64;
+    if (!privateKey) return false;
+
+    const decryptor = await this.getBackupDecryptor(backupInfo, decodeBase64(privateKey)).catch(
+      () => null
+    );
+    if (!decryptor) return false;
+
+    try {
+      const decrypted = await decryptor.decryptSessions({ session });
+      if (decrypted.length === 0) return false;
+
+      const withRoom = decrypted.map((entry) => ({ ...entry, room_id: roomId }));
+      const result = await this.#importBackedUpRoomKeys(withRoom, backupInfo.version);
+      return result.imported > 0;
+    } finally {
+      decryptor.free();
+    }
   }
 
   async #receiveSyncChanges(input: {
@@ -861,6 +896,7 @@ export class EngineCrypto
     this.#roomsWithTrackedMembers.clear();
     this.#encryptionChains.clear();
     this.#claimChain = Promise.resolve();
+    this.#backupDownloader.stop();
   }
 
   #trustRequirement(): number {
@@ -1842,6 +1878,12 @@ export class EngineCrypto
     await this.#call('saveBackupDecryptionKey', { decryptionKey: encodeBase64(key), version });
     this.#hasBackupDecryptionKey = true;
     this.emit(CryptoEvent.KeyBackupDecryptionKeyCached, version);
+  }
+
+  async requestMissingSecretsIfNeeded(): Promise<boolean> {
+    const requested = (await this.#call('requestMissingSecretsIfNeeded')) === true;
+    if (requested) await this.#flushOutgoingRequests();
+    return requested;
   }
 
   async checkSecrets(name: string): Promise<void> {

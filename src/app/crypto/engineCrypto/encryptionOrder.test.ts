@@ -3,7 +3,9 @@ import type { MatrixClient, MatrixEvent, Room } from '$types/matrix-sdk';
 import { engineInvoke } from '../olmMachine/engineInvoke';
 import { EngineCrypto } from './EngineCrypto';
 
-vi.mock('../olmMachine/engineInvoke', () => ({ engineInvoke: vi.fn() }));
+vi.mock('../olmMachine/engineInvoke', () => ({
+  engineInvoke: vi.fn<(...args: never[]) => Promise<unknown>>(),
+}));
 
 const mockInvoke = vi.mocked(engineInvoke);
 
@@ -23,13 +25,11 @@ const event = () =>
   ({
     getType: () => 'm.room.message',
     getContent: () => ({}),
-    makeEncrypted: vi.fn(),
+    makeEncrypted: vi.fn<() => void>(),
     getTxnId: () => 't',
   }) as unknown as MatrixEvent;
 
 describe('encryptEvent ordering', () => {
-  // element-web#26684: an edit must not overtake the message it edits. Looking members up
-  // outside the per-room chain reintroduces that race while keeping mutual exclusion.
   it('does not look up members for the next event until the previous one is encrypted', async () => {
     let lookups = 0;
     let release: (() => void) | undefined;
@@ -46,7 +46,7 @@ describe('encryptEvent ordering', () => {
       return null;
     });
 
-    const mx = { http: { authedRequest: vi.fn() } } as unknown as MatrixClient;
+    const mx = { http: { authedRequest: vi.fn<() => void>() } } as unknown as MatrixClient;
     const crypto = new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' });
     const target = room('!r:e.org', () => {
       lookups += 1;
@@ -85,7 +85,7 @@ describe('encryptEvent ordering', () => {
       return null;
     });
 
-    const mx = { http: { authedRequest: vi.fn() } } as unknown as MatrixClient;
+    const mx = { http: { authedRequest: vi.fn<() => void>() } } as unknown as MatrixClient;
     const crypto = new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' });
 
     await Promise.all([

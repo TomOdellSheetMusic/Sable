@@ -277,8 +277,6 @@ mod tests {
         OlmMachine::new(user, "BACKUPDEV".into()).await
     }
 
-    /// EngineCrypto.ts reads these exact spellings; a rename here is invisible to the
-    /// compiler and silently breaks restore.
     #[tokio::test]
     async fn a_saved_decryption_key_reads_back_in_the_wasm_shape() {
         let machine = machine().await;
@@ -362,7 +360,6 @@ mod tests {
         );
     }
 
-    /// The key itself must never reach an error string or a log.
     #[tokio::test]
     async fn a_malformed_decryption_key_is_an_error_that_does_not_leak_it() {
         let machine = machine().await;

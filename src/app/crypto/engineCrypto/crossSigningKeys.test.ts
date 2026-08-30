@@ -3,7 +3,9 @@ import type { MatrixClient } from '$types/matrix-sdk';
 import { engineInvoke } from '../olmMachine/engineInvoke';
 import { EngineCrypto } from './EngineCrypto';
 
-vi.mock('../olmMachine/engineInvoke', () => ({ engineInvoke: vi.fn() }));
+vi.mock('../olmMachine/engineInvoke', () => ({
+  engineInvoke: vi.fn<(...args: never[]) => Promise<unknown>>(),
+}));
 
 const mockInvoke = vi.mocked(engineInvoke);
 
@@ -11,7 +13,9 @@ const invoked = (method: string) => mockInvoke.mock.calls.filter(([, called]) =>
 
 const crypto = () =>
   new EngineCrypto(
-    { http: { authedRequest: vi.fn(async () => '{}') } } as unknown as MatrixClient,
+    {
+      http: { authedRequest: vi.fn<(...args: never[]) => Promise<string>>(async () => '{}') },
+    } as unknown as MatrixClient,
     {
       userId: '@me:e.org',
       deviceId: 'D',
@@ -21,8 +25,6 @@ const crypto = () =>
 describe('userHasCrossSigningKeys', () => {
   beforeEach(() => mockInvoke.mockReset());
 
-  // Answering false from a stale store makes callers rotate our cross-signing keys and
-  // invalidate every existing verification, so our own identity is always refreshed.
   it('refreshes keys/query before answering for our own user', async () => {
     mockInvoke.mockImplementation(async (_identity, method) => {
       if (method === 'queryKeysForUsers') return { id: 'q1', type: 1, body: '{}' };

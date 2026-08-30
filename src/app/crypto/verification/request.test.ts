@@ -30,8 +30,6 @@ const state = (patch: Partial<EngineVerificationState> = {}): EngineVerification
 });
 
 describe('EngineVerificationRequest', () => {
-  // Both sides press verify at the same moment; the loser's Sas is replaced by a fresh
-  // one that has not been accepted, and must be re-accepted or the flow hangs.
   it('re-accepts when our SAS is replaced after losing the start tie-break', async () => {
     const call = vi.fn<(m: string, a?: Record<string, unknown>) => Promise<unknown>>(
       async () => null

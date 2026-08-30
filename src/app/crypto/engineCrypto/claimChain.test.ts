@@ -3,7 +3,9 @@ import type { MatrixClient, MatrixEvent, Room } from '$types/matrix-sdk';
 import { engineInvoke } from '../olmMachine/engineInvoke';
 import { EngineCrypto } from './EngineCrypto';
 
-vi.mock('../olmMachine/engineInvoke', () => ({ engineInvoke: vi.fn() }));
+vi.mock('../olmMachine/engineInvoke', () => ({
+  engineInvoke: vi.fn<(...args: never[]) => Promise<unknown>>(),
+}));
 
 const mockInvoke = vi.mocked(engineInvoke);
 
@@ -20,12 +22,14 @@ const event = () =>
   ({
     getType: () => 'm.room.message',
     getContent: () => ({}),
-    makeEncrypted: vi.fn(),
+    makeEncrypted: vi.fn<() => void>(),
     getTxnId: () => 't',
   }) as unknown as MatrixEvent;
 
 const client = () =>
-  ({ http: { authedRequest: vi.fn(async () => '{}') } }) as unknown as MatrixClient;
+  ({
+    http: { authedRequest: vi.fn<(...args: never[]) => Promise<string>>(async () => '{}') },
+  }) as unknown as MatrixClient;
 
 describe('key claim serialisation', () => {
   it('never claims keys for two rooms at the same time', async () => {

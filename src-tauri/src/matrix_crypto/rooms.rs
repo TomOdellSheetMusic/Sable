@@ -454,10 +454,6 @@ mod tests {
         );
     }
 
-    /// Membership comes from server state and is not validated by the SDK. A single
-    /// unparseable id used to abort the whole call, which left the user unable to send
-    /// any encrypted message in that room. `updateTrackedUsers` and `queryKeysForUsers`
-    /// already skip the same ids from the same array.
     #[test]
     fn an_unparseable_member_id_is_skipped_not_fatal() {
         let args = json!({ "users": ["@good:example.org", "@bad:under_score", "not-an-id", 7] });

@@ -34,9 +34,6 @@ pub fn encryption_algorithm(algorithm: &EventEncryptionAlgorithm) -> u8 {
 mod tests {
     use super::*;
 
-    /// The webview sends and reads these as bare numbers from matrix-sdk-crypto-wasm,
-    /// which is versioned separately from this crate, so nothing links the two at
-    /// compile time. Mirrors requests.test.js and encryption.test.ts upstream.
     #[test]
     fn request_type_codes_match_the_wasm_enum() {
         assert_eq!(request_type::KEYS_UPLOAD, 0);

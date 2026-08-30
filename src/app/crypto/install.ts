@@ -130,6 +130,10 @@ export const installRustCrypto = async (
     cryptoLog.warn('general', 'Failed to read the gossiped backup key', error);
   });
 
+  engineCrypto.requestMissingSecretsIfNeeded().catch((error: unknown) => {
+    cryptoLog.warn('general', 'Failed to ask our other devices for missing secrets', error);
+  });
+
   const stopEngineCrypto = engineCrypto.stop.bind(engineCrypto);
   engineCrypto.stop = () => {
     stopReEmittingCryptoEvents();

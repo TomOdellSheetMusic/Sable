@@ -1,4 +1,6 @@
 import { Method } from 'matrix-js-sdk/lib/http-api';
+import { calculateRetryBackoff } from 'matrix-js-sdk/lib/http-api/utils';
+import { sleep } from 'matrix-js-sdk/lib/utils';
 import type { MatrixClient } from '$types/matrix-sdk';
 
 /** Numeric codes the engine tags outgoing requests with; see wasm_enums.rs. */
@@ -41,13 +43,25 @@ export const sendOutgoingRequest = async (
   mx: MatrixClient,
   request: OutgoingRequest
 ): Promise<string> => {
-  const send = (method: Method, url: string, params: Record<string, string> = {}) =>
-    mx.http.authedRequest<string>(method, url, params, request.body, {
-      prefix: '',
-      json: false,
-      localTimeoutMs: OUTGOING_REQUEST_TIMEOUT_MS,
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    });
+  const send = async (method: Method, url: string, params: Record<string, string> = {}) => {
+    for (let attempts = 0; ;) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        return await mx.http.authedRequest<string>(method, url, params, request.body, {
+          prefix: '',
+          json: false,
+          localTimeoutMs: OUTGOING_REQUEST_TIMEOUT_MS,
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        });
+      } catch (error) {
+        attempts += 1;
+        const backoff = calculateRetryBackoff(error, attempts, true);
+        if (backoff < 0) throw error;
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(backoff);
+      }
+    }
+  };
 
   switch (request.type) {
     case RequestType.KeysUpload:

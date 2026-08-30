@@ -331,6 +331,10 @@ export class EngineCrypto
 
   readonly #roomsWithTrackedMembers = new Set<string>();
 
+  #claimChain: Promise<unknown> = Promise.resolve();
+
+  readonly #encryptionChains = new Map<string, Promise<unknown>>();
+
   readonly #backupUpload = createCoalescedRunner(
     () =>
       this.#uploadRoomKeysToBackup().catch((error: unknown) => {
@@ -851,6 +855,8 @@ export class EngineCrypto
     this.#backupUpload.cancel();
     this.#eventsPendingKey.clear();
     this.#roomsWithTrackedMembers.clear();
+    this.#encryptionChains.clear();
+    this.#claimChain = Promise.resolve();
   }
 
   #trustRequirement(): number {
@@ -893,7 +899,30 @@ export class EngineCrypto
     return settings;
   }
 
+  #serializeForRoom<T>(roomId: string, run: () => Promise<T>): Promise<T> {
+    const next = (this.#encryptionChains.get(roomId) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(run);
+    this.#encryptionChains.set(roomId, next);
+    return next;
+  }
+
+  async #ensureSessionsForUsers(users: string[]): Promise<void> {
+    const next = this.#claimChain
+      .catch(() => undefined)
+      .then(async () => {
+        const claim = (await this.#call('getMissingSessions', { users })) as OutgoingRequest | null;
+        await this.#sendTracked(claim);
+      });
+    this.#claimChain = next;
+    await next;
+  }
+
   async encryptEvent(event: MatrixEvent, room: Room): Promise<void> {
+    return this.#serializeForRoom(room.roomId, () => this.#encryptEventInner(event, room));
+  }
+
+  async #encryptEventInner(event: MatrixEvent, room: Room): Promise<void> {
     // The megolm session has to reach every device in the room before the event does.
     const members = await room.getEncryptionTargetMembers();
     const users = members.map((member) => member.userId);
@@ -906,8 +935,7 @@ export class EngineCrypto
       this.#roomsWithTrackedMembers.add(room.roomId);
     }
 
-    const claim = (await this.#call('getMissingSessions', { users })) as OutgoingRequest | null;
-    await this.#sendTracked(claim);
+    await this.#ensureSessionsForUsers(users);
 
     const shared = ((await this.#call('shareRoomKey', {
       roomId: room.roomId,
@@ -1295,15 +1323,13 @@ export class EngineCrypto
   }
 
   prepareToEncrypt(room: Room): void {
-    void room
-      .getEncryptionTargetMembers()
-      .then(async (members) => {
-        const users = members.map((member) => member.userId);
-        await this.#trackUsers(users);
-        await this.#sendTracked(await this.#call('getMissingSessions', { users }));
-        await this.#flushOutgoingRequests();
-      })
-      .catch((error: unknown) => engineCryptoLog.warn('general', 'prepareToEncrypt failed', error));
+    void this.#serializeForRoom(room.roomId, async () => {
+      const members = await room.getEncryptionTargetMembers();
+      const users = members.map((member) => member.userId);
+      await this.#trackUsers(users);
+      await this.#ensureSessionsForUsers(users);
+      await this.#flushOutgoingRequests();
+    }).catch((error: unknown) => engineCryptoLog.warn('general', 'prepareToEncrypt failed', error));
   }
 
   async forceDiscardSession(roomId: string): Promise<void> {

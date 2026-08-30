@@ -9,8 +9,19 @@ vi.mock('../olmMachine/engineInvoke', () => ({
 
 const mockInvoke = vi.mocked(engineInvoke);
 
-const crypto = () =>
-  new EngineCrypto({} as MatrixClient, { userId: '@me:example.org', deviceId: 'DEVICE' });
+const crypto = (stored: string[] = []) =>
+  new EngineCrypto(
+    {
+      secretStorage: { isStored: async (name: string) => (stored.includes(name) ? {} : null) },
+    } as unknown as MatrixClient,
+    { userId: '@me:example.org', deviceId: 'DEVICE' }
+  );
+
+const CROSS_SIGNING_SECRETS = [
+  'm.cross_signing.master',
+  'm.cross_signing.self_signing',
+  'm.cross_signing.user_signing',
+];
 
 /** Mirrors the exact JSON the Rust side emits; a rename there breaks these loudly. */
 describe('engine payload shapes', () => {
@@ -104,5 +115,20 @@ describe('engine payload shapes', () => {
       selfSigningKey: true,
       userSigningKey: false,
     });
+  });
+
+  it('reports cross-signing keys held in secret storage', async () => {
+    mockInvoke.mockResolvedValue({
+      hasMaster: false,
+      hasSelfSigning: false,
+      hasUserSigning: false,
+    });
+
+    await expect(crypto(CROSS_SIGNING_SECRETS).getCrossSigningStatus()).resolves.toMatchObject({
+      privateKeysInSecretStorage: true,
+    });
+    await expect(
+      crypto(CROSS_SIGNING_SECRETS.slice(0, 2)).getCrossSigningStatus()
+    ).resolves.toMatchObject({ privateKeysInSecretStorage: false });
   });
 });

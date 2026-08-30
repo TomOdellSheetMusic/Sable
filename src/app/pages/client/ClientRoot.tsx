@@ -44,7 +44,8 @@ import { useSyncNicknames } from '$hooks/useNickname';
 import { useAppVisibility } from '$hooks/useAppVisibility';
 import { useNetworkRecovery } from '$hooks/useNetworkRecovery';
 import { useLoopbackMediaRecovery } from '$hooks/useLoopbackMediaRecovery';
-import { useBackgroundSyncPause } from '$hooks/useBackgroundSyncPause';
+import { useSyncOrchestrator } from '$hooks/useSyncOrchestrator';
+import { usePushDiagnosticsReport } from '$hooks/usePushDiagnosticsReport';
 import { composerIcon, DotsThreeOutlineVerticalIcon } from '$components/icons/phosphor';
 import { getHomePath } from '$pages/pathUtils';
 import { DIRECT_ROOM_PATH, HOME_ROOM_PATH, SPACE_ROOM_PATH } from '$pages/paths';
@@ -373,7 +374,8 @@ export function ClientRoot({ children }: ClientRootProps) {
   useLogoutListener(mx, activeSession);
   useAppVisibility(mx);
   useNetworkRecovery(mx);
-  useBackgroundSyncPause(mx);
+  useSyncOrchestrator(startState.status === AsyncStatus.Success ? mx : undefined);
+  usePushDiagnosticsReport();
   useLoopbackMediaRecovery();
   useCrossSigningResetDetect(mx);
 

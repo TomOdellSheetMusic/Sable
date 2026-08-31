@@ -12,7 +12,7 @@ import { useAtomValue, useSetAtom } from 'jotai';
 import { matchPath, useLocation, useNavigate } from 'react-router';
 import { lastVisitedRoomAtom } from '$state/room/lastRoom';
 import { usePrefersReducedMotion } from '$hooks/usePrefersReducedMotion';
-import { DIRECT_PATH, EXPLORE_PATH, HOME_PATH, INBOX_PATH, SPACE_PATH } from '$pages/paths';
+import { DIRECT_PATH, EXPLORE_PATH, INBOX_PATH, SPACE_PATH } from '$pages/paths';
 import { resolveSection } from '$pages/pathUtils';
 import { matchRoomRoute } from '$pages/roomRouteMatch';
 import { PersistentRoomHost } from './PersistentRoomHost';

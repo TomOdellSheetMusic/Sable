@@ -62,7 +62,6 @@ export function MobileNavDrawer({ nav, rail, bottomNav, children }: MobileNavDra
   const isRoomRoute = roomRoute !== undefined;
 
   const listView =
-    matchPath({ path: HOME_PATH, end: true }, location.pathname) !== null ||
     matchPath({ path: DIRECT_PATH, end: true }, location.pathname) !== null ||
     matchPath({ path: SPACE_PATH, end: true }, location.pathname) !== null ||
     matchPath({ path: EXPLORE_PATH, end: true }, location.pathname) !== null ||

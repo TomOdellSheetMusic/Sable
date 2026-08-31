@@ -366,6 +366,7 @@ export class EngineCrypto
     this.#identity = identity;
     this.#backupDownloader = new PerSessionBackupDownloader({
       mx,
+      getBackupVersion: () => this.getActiveSessionBackupVersion().catch(() => null),
       importSession: (roomId, session) => this.#importBackedUpSession(roomId, session),
       now: () => Date.now(),
     });

@@ -9,6 +9,7 @@ export type SessionRef = { roomId: string; sessionId: string };
 
 export type BackupDownloadHost = {
   mx: MatrixClient;
+  getBackupVersion: () => Promise<string | null>;
   importSession: (roomId: string, session: KeyBackupSession) => Promise<boolean>;
   now: () => number;
 };
@@ -91,11 +92,17 @@ export class PerSessionBackupDownloader {
       $sessionId: ref.sessionId,
     });
 
+    const version = await this.#host.getBackupVersion();
+    if (!version) {
+      this.#missingUntil.set(key, this.#host.now() + BACKOFF_TIME_MS);
+      return;
+    }
+
     try {
       const session = await this.#host.mx.http.authedRequest<KeyBackupSession>(
         Method.Get,
         path,
-        {},
+        { version },
         undefined,
         { prefix: ClientPrefix.V3 }
       );

@@ -18,9 +18,11 @@ const rateLimited = (retryAfterMs: number) =>
 
 describe('PerSessionBackupDownloader', () => {
   let clock = 0;
+  let backupVersion: string | null = '7';
 
   beforeEach(() => {
     clock = 0;
+    backupVersion = '7';
   });
 
   const make = (
@@ -31,6 +33,7 @@ describe('PerSessionBackupDownloader', () => {
   ) => {
     const downloader = new PerSessionBackupDownloader({
       mx: { http: { authedRequest } } as unknown as MatrixClient,
+      getBackupVersion: async () => backupVersion,
       importSession,
       now: () => clock,
     });
@@ -48,7 +51,22 @@ describe('PerSessionBackupDownloader', () => {
 
     expect(authedRequest).toHaveBeenCalledTimes(1);
     expect(authedRequest.mock.calls[0]?.[1]).toBe('/room_keys/keys/!r%3Ae.org/S1');
+    expect(authedRequest.mock.calls[0]?.[2]).toEqual({ version: '7' });
     expect(importSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not query the backup when no active version is known', async () => {
+    backupVersion = null;
+    const authedRequest = vi.fn<(...args: never[]) => Promise<unknown>>(async () => ({
+      session_data: {},
+    }));
+    const { downloader, importSession } = make(authedRequest);
+
+    downloader.request({ roomId: '!r:e.org', sessionId: 'S1' });
+    await settle();
+
+    expect(authedRequest).not.toHaveBeenCalled();
+    expect(importSession).not.toHaveBeenCalled();
   });
 
   it('does not hammer the backup for a session it is already fetching', async () => {

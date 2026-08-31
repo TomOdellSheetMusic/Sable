@@ -31,7 +31,7 @@ const {
   vListProps,
   timelineSyncOptions,
   timelineActionsOptions,
-  showToastMock,
+  showErrorToastMock,
   markAsReadMock,
   readMarkerInLiveTimeline,
 } = vi.hoisted(() => ({
@@ -91,7 +91,7 @@ const {
   vListProps: { shift: false, shiftValues: [] as boolean[] },
   timelineSyncOptions: { current: undefined as Record<string, unknown> | undefined },
   timelineActionsOptions: { current: undefined as Record<string, unknown> | undefined },
-  showToastMock: vi.fn<(text: string) => void>(),
+  showErrorToastMock: vi.fn<(text: string) => void>(),
   markAsReadMock: vi.fn<() => void>(),
   readMarkerInLiveTimeline: { current: false },
 }));
@@ -157,7 +157,7 @@ vi.mock('$hooks/useRoomNavigate', () => ({
   useRoomNavigate: () => ({ navigateRoom: navigateRoomMock }),
 }));
 
-vi.mock('$state/toast', () => ({ showToast: showToastMock }));
+vi.mock('$state/toast', () => ({ showErrorToast: showErrorToastMock }));
 
 vi.mock('$hooks/useSpace', () => ({ useSpaceOptionally: () => undefined }));
 
@@ -404,7 +404,7 @@ beforeEach(() => {
   eventTimeline.current = liveTimeline;
   liveTimeline.getEvents = () => [{ getId: () => '$evt1' }];
   navigateRoomMock.mockReset();
-  showToastMock.mockReset();
+  showErrorToastMock.mockReset();
   markAsReadMock.mockReset();
   readMarkerInLiveTimeline.current = false;
   vListProps.shift = false;
@@ -1014,7 +1014,7 @@ describe('jump reveal and focus-regain read receipts', () => {
     const onJumpError = timelineSyncOptions.current?.onJumpError as (() => void) | undefined;
     act(() => onJumpError?.());
 
-    expect(showToastMock).toHaveBeenCalledWith('Unable to load this message.');
+    expect(showErrorToastMock).toHaveBeenCalledWith('Unable to load this message.');
   });
 
   it('clears a notification route when an own message returns to the live timeline', async () => {

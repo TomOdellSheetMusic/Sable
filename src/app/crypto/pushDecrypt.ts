@@ -59,11 +59,10 @@ export const decryptPushEventNatively = async (
       sender: decrypted.sender ?? event.sender,
     };
   } catch (error) {
-    // Expected while the to-device key is still in flight, so not a warning.
-    pushDecryptLog.info(
+    pushDecryptLog.warn(
       'notification',
       'Native push decryption unavailable, falling back to the js-sdk path',
-      error
+      { reason: error instanceof Error ? error.message : String(error) }
     );
     return null;
   }

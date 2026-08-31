@@ -592,13 +592,7 @@ export function BackgroundNotifications() {
         .catch((err) => {
           if (disposed) return;
           log.error('failed to start background client for', session.userId, err);
-          debugLog.error('notification', 'Failed to start background client', {
-            userId: session.userId,
-            error: err,
-          });
-          Sentry.captureException(err, {
-            tags: { component: 'BackgroundNotifications' },
-          });
+          debugLog.error('notification', 'Failed to start background client', err);
 
           // Remove the stuck/failed client from current so future runs (or the
           // retry below) can attempt a fresh start.

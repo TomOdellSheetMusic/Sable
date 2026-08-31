@@ -99,6 +99,7 @@ if (dsn && sentryEnabled) {
     beforeSendLog(log) {
       // Drop debug-level logs in production to reduce noise and quota usage
       if (log.level === 'debug' && environment === 'production') return null;
+      if (typeof log.message === 'string' && log.message.startsWith('[sable:')) return null;
       // Redact Matrix IDs and tokens from the log message string
       if (typeof log.message === 'string') {
         log.message = scrubMatrixIds(log.message);

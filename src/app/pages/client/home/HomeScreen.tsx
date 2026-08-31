@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { Avatar, Box, IconButton, Scroll, Text, toRem } from 'folds';
+import { useCompactLayout } from '$hooks/useScreenSize';
 import { useAtomValue } from 'jotai';
 import {
   ChatCircleDots,
@@ -282,12 +283,27 @@ function HomeRoomRow({ roomId }: { roomId: string }) {
   );
 }
 
+function HomeRooms({ displayRooms }: { displayRooms: string[] }) {
+  if (displayRooms.length === 0) return null;
+  return (
+    <Box direction="Column" gap="400">
+      <Text size="H4">Your Rooms</Text>
+      <Box direction="Column" gap="200">
+        {displayRooms.map((roomId) => (
+          <HomeRoomRow key={roomId} roomId={roomId} />
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
 export function HomeScreen() {
   const mx = useMatrixClient();
   const [isShowingAllRoomsInHome] = useSetting(settingsAtom, 'isShowingAllRoomsInHome');
   const rooms = useHomeRooms(isShowingAllRoomsInHome);
   const roomToUnread = useAtomValue(roomToUnreadAtom);
   const selectedRoomId = useSelectedOrLastRoom();
+  const compact = useCompactLayout();
 
   const orderedRooms = useMemo(
     () => Array.from(rooms).toSorted(factoryRoomIdByActivity(mx)),
@@ -314,28 +330,30 @@ export function HomeScreen() {
                   <PageHero icon="" title="Home" subTitle="Your rooms, all in one place." />
                 </PageHeroSection>
 
-                <Box direction="Row" gap="500" alignItems="Start">
-                  {/* Middle: contacts + rooms */}
-                  <Box grow="Yes" direction="Column" gap="700" style={{ minWidth: 0 }}>
+                {compact ? (
+                  <Box direction="Column" gap="700">
                     <ContactsList />
 
-                    {displayRooms.length > 0 && (
-                      <Box direction="Column" gap="400">
-                        <Text size="H4">Your Rooms</Text>
-                        <Box direction="Column" gap="200">
-                          {displayRooms.map((roomId) => (
-                            <HomeRoomRow key={roomId} roomId={roomId} />
-                          ))}
-                        </Box>
-                      </Box>
-                    )}
-                  </Box>
-
-                  {/* Right: calls + reserved games/RPC */}
-                  <Box direction="Column" gap="500" style={{ width: toRem(320), flexShrink: 0 }}>
+                    {/* Right: calls + reserved games/RPC */}
                     <CallActivitySidebar />
+
+                    <HomeRooms displayRooms={displayRooms} />
                   </Box>
-                </Box>
+                ) : (
+                  <Box direction="Row" gap="500" alignItems="Start">
+                    {/* Middle: contacts + rooms */}
+                    <Box grow="Yes" direction="Column" gap="700" style={{ minWidth: 0 }}>
+                      <ContactsList />
+
+                      {displayRooms.length > 0 && <HomeRooms displayRooms={displayRooms} />}
+                    </Box>
+
+                    {/* Right: calls + reserved games/RPC */}
+                    <Box direction="Column" gap="500" style={{ width: toRem(320), flexShrink: 0 }}>
+                      <CallActivitySidebar />
+                    </Box>
+                  </Box>
+                )}
               </Box>
             </PageContentCenter>
           </PageContent>

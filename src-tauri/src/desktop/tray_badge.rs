@@ -126,7 +126,10 @@ mod tests {
         let out = render_badged_icon(&base);
         // The dot sits in the bottom-right corner.
         let idx = (((height - 7) * width + (width - 7)) * 4) as usize;
-        assert!(out.rgba()[idx + 3] > 0, "dot should be drawn in the bottom-right");
+        assert!(
+            out.rgba()[idx + 3] > 0,
+            "dot should be drawn in the bottom-right"
+        );
         // A pixel further out should still be opaque (the white outline).
         let outer_idx = (((height - 9) * width + (width - 9)) * 4) as usize;
         assert_eq!(out.rgba()[outer_idx + 3], 255, "outline should be opaque");

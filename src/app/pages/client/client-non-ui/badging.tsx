@@ -126,25 +126,19 @@ export function FaviconUpdater() {
       setFavicon(LogoSVG);
     }
     try {
-      // Badge with the count of new DMs + mentions + invites. DMs count every
-      // message (so rapid messages from one user all add up); other rooms count
-      // mentions only, since total unread is too noisy for an OS-level badge.
       if (isNativeNotificationTauri()) {
         const badgeCount = appBadgeCount > 0 ? appBadgeCount : undefined;
-        if (osType() === 'linux') {
-          // Linux has no taskbar badge; the count goes on the tray icon instead.
+        const os = osType();
+        if (os === 'linux' || os === 'windows') {
           setTrayBadge({ count: badgeCount ?? null }).catch(() => {});
-        } else if (osType() === 'windows') {
-          // Windows has no numeric badge API; render the count onto an overlay
-          // icon instead. macOS caps the badge at 99+ via setBadgeCount.
-          if (badgeCount === undefined) {
-            clearWindowsBadge().catch(() => {});
-          } else {
-            setWindowsBadge(badgeCount).catch(() => {});
+          if (os === 'windows') {
+            if (badgeCount === undefined) {
+              clearWindowsBadge().catch(() => {});
+            } else {
+              setWindowsBadge(badgeCount).catch(() => {});
+            }
           }
         } else {
-          // macOS dock badge. setBadgeCount only accepts a number, so cap it
-          // at 99 (the OS renders "99+" for anything higher).
           const capped =
             badgeCount === undefined ? undefined : Math.min(badgeCount, MAX_BADGE_COUNT);
           import('@tauri-apps/api/window')

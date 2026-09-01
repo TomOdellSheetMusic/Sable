@@ -197,6 +197,12 @@ export const useBindRoomToUnreadAtom = (mx: MatrixClient, unreadAtom: typeof roo
     mDirectsRef.current = mDirects;
   }, [mDirects]);
   const publishUnreadActionRef = useRef<(action: RoomToUnreadAction) => void>(() => {});
+  // Unread updates that arrive while a sliding-sync response is being
+  // processed must not be dropped: they get queued here and flushed as soon
+  // as the response settles. Dropping them (as before) left the taskbar/tray
+  // badge stale until the *next* server round-trip, which is what made the
+  // badge lag after marking a room read.
+  const pendingRef = useRef<RoomToUnreadAction[]>([]);
   useEffect(() => {
     if (getClientSyncDiagnostics(mx).transport !== 'sliding') return undefined;
     const resolver = new UnreadCountResolver(mx, (room, unreadInfo) => {
@@ -238,12 +244,31 @@ export const useBindRoomToUnreadAtom = (mx: MatrixClient, unreadAtom: typeof roo
           if (info.estimated) resolverRef.current?.queue(info.roomId);
         });
         const manager = getSlidingSyncManager(mx);
-        if (manager?.isResponseProcessing()) return;
+        if (manager?.isResponseProcessing()) {
+          pendingRef.current.push(action);
+          return;
+        }
       }
       setUnreadAtom(action);
     },
     [mx, setUnreadAtom]
   );
+  // Flush any actions deferred during response processing once the response
+  // settles, so user-triggered badge changes (e.g. mark-as-read) surface
+  // promptly instead of waiting for the next sync cycle.
+  useEffect(() => {
+    const manager = getSlidingSyncManager(mx);
+    if (!manager) return undefined;
+    const unsubscribe = manager.subscribeToResponseSettled(() => {
+      const pending = pendingRef.current;
+      if (pending.length === 0) return;
+      pendingRef.current = [];
+      for (const action of pending) {
+        setUnreadAtom(action);
+      }
+    });
+    return unsubscribe;
+  }, [mx, setUnreadAtom]);
   const resetUnread = useCallback(
     () =>
       publishUnreadAction({

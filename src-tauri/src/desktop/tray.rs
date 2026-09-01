@@ -405,7 +405,7 @@ pub fn create_system_tray(app: &AppHandle<crate::BrowserEngine>) -> tauri::Resul
 
     tray_builder.build(app)?;
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     crate::desktop::tray_badge::reset_badge_state();
 
     Ok(())

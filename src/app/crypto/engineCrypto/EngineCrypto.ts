@@ -37,8 +37,10 @@ import { secretStorageCanAccessSecrets } from './secretStorageAccess';
 import { PerSessionBackupDownloader } from './perSessionBackupDownload';
 import type { CryptoEventHandlerMap } from 'matrix-js-sdk/lib/crypto-api/CryptoEventHandlerMap';
 import { createDebugLogger } from '$utils/debugLogger';
+import { traceVerification, warnVerification } from '$utils/verificationTrace';
 import { EngineVerificationRequest } from '../verification/request';
 import {
+  EnginePhase,
   SUPPORTED_VERIFICATION_METHOD_CODES,
   type EngineVerificationState,
 } from '../verification/state';
@@ -90,6 +92,8 @@ const engineCryptoLog = createDebugLogger('engine-crypto');
 const DECRYPTION_WAIT_MS = 5 * 60 * 1000;
 
 const MAX_OUTGOING_DRAIN_PASSES = 5;
+
+const VERIFICATION_SWEEP_INTERVAL_MS = 5000;
 
 const RESTORE_CHUNK_SIZE = 200;
 
@@ -320,6 +324,8 @@ export class EngineCrypto
   #trustCrossSignedDevices = true;
 
   #stopped = false;
+
+  #lastVerificationSweep = 0;
 
   #deviceIsolationMode: DeviceIsolationMode | undefined;
 
@@ -719,21 +725,48 @@ export class EngineCrypto
     });
   }
 
-  async onIncomingKeyVerificationRequest(sender: string, transactionId: string): Promise<void> {
+  async onIncomingKeyVerificationRequest(sender: string, transactionId: string): Promise<boolean> {
     const state = (await this.#call('getVerificationRequest', {
       userId: sender,
       flowId: transactionId,
     })) as EngineVerificationState | null;
-    if (!state) return;
+    if (!state) return false;
 
     const existing = this.#verificationRequests.get(transactionId);
     if (existing) {
       existing.apply(state);
-      return;
+      return true;
     }
     const request = new EngineVerificationRequest(this.#engineCall, state);
     this.#verificationRequests.set(transactionId, request);
+    traceVerification('Surfacing an incoming verification request', {
+      sender,
+      transactionId,
+      isSelfVerification: state.isSelfVerification,
+      phase: state.phase,
+    });
     this.emit(CryptoEvent.VerificationRequestReceived, request);
+    return true;
+  }
+
+  async #retryVerificationRequestWithKeys(
+    sender: string,
+    transactionId: string,
+    event: IToDeviceEvent
+  ): Promise<void> {
+    await this.#trackUsers([sender]);
+    await this.#sendTracked(await this.#call('queryKeysForUsers', { users: [sender] }));
+    await this.#flushOutgoingRequests();
+    await this.#receiveSyncChanges({ toDeviceEvents: [event] });
+    if (!(await this.onIncomingKeyVerificationRequest(sender, transactionId))) {
+      const sentAt = (event.content as { timestamp?: number } | undefined)?.timestamp;
+      warnVerification('The engine kept ignoring a verification request', {
+        sender,
+        transactionId,
+        clockSkewSeconds:
+          typeof sentAt === 'number' ? Math.round((Date.now() - sentAt) / 1000) : null,
+      });
+    }
   }
 
   #flushOutgoingRequests(): Promise<void> {
@@ -803,13 +836,27 @@ export class EngineCrypto
       if (typeof message.type === 'string' && message.type.startsWith('m.key.verification.')) {
         const transactionId = (message.content as { transaction_id?: string })?.transaction_id;
         if (transactionId && message.sender) {
+          traceVerification('Received a verification to-device event', {
+            type: message.type,
+            sender: message.sender,
+            transactionId,
+          });
           if (message.type === EventType.KeyVerificationRequest) {
             // eslint-disable-next-line no-await-in-loop
-            await this.onIncomingKeyVerificationRequest(message.sender, transactionId);
+            const handled = await this.onIncomingKeyVerificationRequest(
+              message.sender,
+              transactionId
+            );
+            if (!handled) {
+              // eslint-disable-next-line no-await-in-loop
+              await this.#retryVerificationRequestWithKeys(message.sender, transactionId, message);
+            }
           } else if (message.type === EventType.KeyVerificationDone) {
             // Rust removes completed requests while consuming the event, so no state snapshot
             // exists to refresh. Keep the JS request alive long enough to expose Done.
             this.#verificationRequests.get(transactionId)?.markDone();
+            // eslint-disable-next-line no-await-in-loop
+            await this.#queryOwnKeys();
           } else {
             // Without this the verifier never learns the SAS digits arrived.
             // eslint-disable-next-line no-await-in-loop
@@ -883,6 +930,39 @@ export class EngineCrypto
     // Working through a backlog: the next sync follows immediately, so batch the drain.
     if (syncState.catchingUp) return;
     void this.#flushOutgoingRequests();
+    void this.#surfacePendingVerificationRequests();
+  }
+
+  async #surfacePendingVerificationRequests(): Promise<void> {
+    const now = Date.now();
+    if (now - this.#lastVerificationSweep < VERIFICATION_SWEEP_INTERVAL_MS) return;
+    this.#lastVerificationSweep = now;
+
+    let states: EngineVerificationState[];
+    try {
+      states = ((await this.#call('getVerificationRequests', {
+        userId: this.#identity.userId,
+      })) ?? []) as EngineVerificationState[];
+    } catch (error) {
+      warnVerification('Could not list pending verification requests', {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    for (const state of states) {
+      if (this.#verificationRequests.has(state.flowId)) continue;
+      if (state.phase === EnginePhase.Done || state.phase === EnginePhase.Cancelled) continue;
+
+      const request = new EngineVerificationRequest(this.#engineCall, state);
+      this.#verificationRequests.set(state.flowId, request);
+      warnVerification('Recovered a verification request the sync path missed', {
+        flowId: state.flowId,
+        otherUserId: state.otherUserId,
+        phase: state.phase,
+      });
+      this.emit(CryptoEvent.VerificationRequestReceived, request);
+    }
   }
 
   async markAllTrackedUsersAsDirty(): Promise<void> {
@@ -1562,6 +1642,22 @@ export class EngineCrypto
     await this.#flushOutgoingRequests();
   }
 
+  async #signOwnDeviceIfNeeded(): Promise<void> {
+    const status = await this.getDeviceVerificationStatus(
+      this.#identity.userId,
+      this.#identity.deviceId
+    );
+    if (status?.crossSigningVerified) return;
+
+    const request = (await this.#call('device.verify', {
+      userId: this.#identity.userId,
+      deviceId: this.#identity.deviceId,
+    })) as OutgoingRequest | null;
+    if (!request) return;
+    await sendOutgoingRequest(this.#mx, request);
+    await this.#queryOwnKeys();
+  }
+
   async crossSignDevice(deviceId: string): Promise<void> {
     await this.#sendTracked(
       await this.#call('device.verify', { userId: this.#identity.userId, deviceId })
@@ -1602,6 +1698,7 @@ export class EngineCrypto
       if (!stored && (await this.#mx.secretStorage.hasKey())) {
         await this.#exportCrossSigningKeysToStorage();
       }
+      await this.#signOwnDeviceIfNeeded();
       return;
     }
 
@@ -1756,6 +1853,7 @@ export class EngineCrypto
         { ...key.keyInfo, key: key.privateKey }
       );
       await this.#mx.secretStorage.setDefaultKeyId(keyId);
+      this.#mx.cryptoCallbacks?.cacheSecretStorageKey?.(keyId, keyInfo, key.privateKey);
       engineCryptoLog.info('general', 'Created a new secret storage key', {
         keyId,
         algorithm: keyInfo.algorithm,
@@ -1875,6 +1973,8 @@ export class EngineCrypto
   }
 
   async requestDeviceVerification(userId: string, deviceId: string): Promise<VerificationRequest> {
+    await this.#sendTracked(await this.#call('queryKeysForUsers', { users: [userId] }));
+    await this.#flushOutgoingRequests();
     return this.#startVerification('device.requestVerification', {
       userId,
       deviceId,

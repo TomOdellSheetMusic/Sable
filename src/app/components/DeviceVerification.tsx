@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Box, config, Dialog, Header, IconButton, Spinner, Text } from 'folds';
 import { composerIcon, X } from '$components/icons/phosphor';
 import * as Sentry from '@sentry/react';
+import { showErrorToast } from '$state/toast';
 import {
   useVerificationRequestPhase,
   useVerificationRequestReceived,
@@ -92,13 +93,24 @@ type VerificationStartProps = {
   onStart: () => Promise<void>;
 };
 function AutoVerificationStart({ onStart }: VerificationStartProps) {
+  const [error, setError] = useState<Error>();
+
   useEffect(() => {
-    onStart().catch(() => undefined);
+    onStart().catch((reason: unknown) => {
+      const failure = reason instanceof Error ? reason : new Error(String(reason));
+      Sentry.captureException(failure, { tags: { flow: 'device-verification-start' } });
+      showErrorToast(failure.message);
+      setError(failure);
+    });
   }, [onStart]);
 
   return (
     <Box direction="Column" gap="400">
-      <WaitingMessage message="Starting verification using emoji comparison..." />
+      {error ? (
+        <Text size="T200">{error.message}</Text>
+      ) : (
+        <WaitingMessage message="Asking your other devices to start emoji comparison..." />
+      )}
     </Box>
   );
 }

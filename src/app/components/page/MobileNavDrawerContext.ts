@@ -13,6 +13,7 @@ export type MobileSwipeTarget = {
 
 export type MobileNavDrawerControls = {
   openContent: (path: string) => void;
+  openNav: () => void;
   registerChatSwipe: (element: HTMLElement, target: MobileSwipeTarget) => () => void;
   registerMessageSwipe: (element: HTMLElement, target: MobileSwipeTarget) => () => void;
 };
@@ -25,4 +26,8 @@ export function useMobileNavDrawer(): MobileNavDrawerControls | undefined {
 
 export function useOpenMobileDrawerContent(): ((path: string) => void) | undefined {
   return useMobileNavDrawer()?.openContent;
+}
+
+export function useOpenMobileDrawerNav(): (() => void) | undefined {
+  return useMobileNavDrawer()?.openNav;
 }

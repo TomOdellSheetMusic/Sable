@@ -6,12 +6,13 @@ import {
   ChatCircleDots,
   House,
   Phone,
+  TextAlignLeft,
   VideoCamera,
-  composerIcon,
   sizedIcon,
   userFallbackIcon,
 } from '$components/icons/phosphor';
-import { Page, PageContent, PageContentCenter, PageHero, PageHeroSection } from '$components/page';
+import { Page, PageContent, PageHeader, PageHero, PageHeroSection } from '$components/page';
+import { useOpenMobileDrawerNav } from '$components/page/MobileNavDrawerContext';
 import { useRoomNavigate } from '$hooks/useRoomNavigate';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useHomeRooms } from './useHomeRooms';
@@ -118,8 +119,7 @@ function ContactsList() {
       if (existing) {
         if (isOneToOne) {
           existing.roomId = roomId;
-          existing.name =
-            getMemberDisplayName(room, userId) ?? getMxIdLocalPart(userId) ?? userId;
+          existing.name = getMemberDisplayName(room, userId) ?? getMxIdLocalPart(userId) ?? userId;
           const avatarMxc = getMemberAvatarMxc(room, userId);
           existing.avatarUrl = avatarMxc
             ? (mxcUrlToHttp(mx, avatarMxc, useAuthentication, 96, 96) ?? undefined)
@@ -306,6 +306,7 @@ export function HomeScreen() {
   const roomToUnread = useAtomValue(roomToUnreadAtom);
   const selectedRoomId = useSelectedOrLastRoom();
   const compact = useCompactLayout();
+  const openNav = useOpenMobileDrawerNav();
 
   const orderedRooms = useMemo(
     () => Array.from(rooms).toSorted(factoryRoomIdByActivity(mx)),
@@ -323,45 +324,57 @@ export function HomeScreen() {
 
   return (
     <Page>
+      {compact && (
+        <PageHeader balance outlined={false}>
+          <Box grow="Yes" alignItems="Center" gap="200">
+            <IconButton
+              onClick={() => openNav?.()}
+              aria-label="Open navigation"
+              variant="Background"
+            >
+              {sizedIcon(TextAlignLeft, '300')}
+            </IconButton>
+            <Text size="H4" truncate>
+              Home
+            </Text>
+          </Box>
+        </PageHeader>
+      )}
       <Box grow="Yes">
         <Scroll hideTrack visibility="Hover">
           <PageContent>
-            <PageContentCenter>
-              <Box direction="Column" gap="700" style={{ maxWidth: toRem(964), width: '100%' }}>
+            <Box direction="Column" gap="700" style={{ width: '100%' }}>
+              {!compact && (
                 <PageHeroSection>
-                  <PageHero
-                    icon=""
-                    title="Home"
-                    subTitle="Your rooms, all in one place."
-                  />
+                  <PageHero icon="" title="Home" subTitle="Your rooms, all in one place." />
                 </PageHeroSection>
+              )}
 
-                {compact ? (
-                  <Box direction="Column" gap="700">
+              {compact ? (
+                <Box direction="Column" gap="700">
+                  <ContactsList />
+
+                  {/* Right: calls + reserved games/RPC */}
+                  <CallActivitySidebar />
+
+                  <HomeRooms displayRooms={displayRooms} />
+                </Box>
+              ) : (
+                <Box direction="Row" gap="500" alignItems="Start">
+                  {/* Middle: contacts + rooms */}
+                  <Box grow="Yes" direction="Column" gap="700" style={{ minWidth: 0 }}>
                     <ContactsList />
 
-                    {/* Right: calls + reserved games/RPC */}
+                    {displayRooms.length > 0 && <HomeRooms displayRooms={displayRooms} />}
+                  </Box>
+
+                  {/* Right: calls + reserved games/RPC */}
+                  <Box direction="Column" gap="500" style={{ width: toRem(320), flexShrink: 0 }}>
                     <CallActivitySidebar />
-
-                    <HomeRooms displayRooms={displayRooms} />
                   </Box>
-                ) : (
-                  <Box direction="Row" gap="500" alignItems="Start">
-                    {/* Middle: contacts + rooms */}
-                    <Box grow="Yes" direction="Column" gap="700" style={{ minWidth: 0 }}>
-                      <ContactsList />
-
-                      {displayRooms.length > 0 && <HomeRooms displayRooms={displayRooms} />}
-                    </Box>
-
-                    {/* Right: calls + reserved games/RPC */}
-                    <Box direction="Column" gap="500" style={{ width: toRem(320), flexShrink: 0 }}>
-                      <CallActivitySidebar />
-                    </Box>
-                  </Box>
-                )}
-              </Box>
-            </PageContentCenter>
+                </Box>
+              )}
+            </Box>
           </PageContent>
         </Scroll>
       </Box>

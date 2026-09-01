@@ -122,7 +122,7 @@ abstract class EngineVerifier<TState>
   private finishCancelled(flow: Record<string, unknown>, error: Error): void {
     if (this.hasBeenCancelled) return;
     this.markCancelled();
-    void this.call(this.cancelMethod, flow);
+    void this.call(this.cancelMethod, flow).catch(() => undefined);
     this.completion.reject(error);
     this.emit(VerifierEvent.Cancel, error);
   }

@@ -173,7 +173,8 @@ fn store_dir(
 pub(super) static OPEN_GUARD: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// Opens a store and registers its machine, replacing any machine already open for the
-/// account. Tauri-free so a cold push can open the same store without an `AppHandle`.
+/// account. Callers holding `OPEN_GUARD` themselves use [`open_machine_locked`].
+#[cfg(test)]
 pub async fn open_machine(
     dir: &Path,
     passphrase: Option<&str>,
@@ -244,16 +245,20 @@ pub async fn engine_open(
         None => store_dir(&app, &user_id, &device_id)?,
     };
 
-    let (machine, info) = open_machine(&dir, passphrase.as_deref(), &user_id, &device_id).await?;
-
     let account = account_key(&user_id, &device_id);
+
+    let guard = OPEN_GUARD.lock().await;
+    let (machine, info) =
+        open_machine_locked(&dir, passphrase.as_deref(), &user_id, &device_id).await?;
     let listeners = events::spawn(&app, &machine, account.clone());
-    if let Some(displaced) = engines()
+    let displaced = engines()
         .listeners
         .lock()
         .map_err(|e| e.to_string())?
-        .insert(account, listeners)
-    {
+        .insert(account, listeners);
+    drop(guard);
+
+    if let Some(displaced) = displaced {
         for handle in displaced {
             handle.abort();
         }

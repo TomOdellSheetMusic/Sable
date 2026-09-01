@@ -43,7 +43,7 @@ import {
 import * as Sentry from '@sentry/react';
 import { startClient, stopClient } from '$client/initMatrix';
 import { createSessionTokenRefresher } from '$client/oidcTokenRefresher';
-import { isDesktopTauri } from '$utils/platform';
+import { hasServiceWorker, isDesktopTauri } from '$utils/platform';
 import { isMobileOrTablet } from '$utils/platform';
 
 const log = createLogger('BackgroundNotifications');
@@ -241,7 +241,7 @@ export function BackgroundNotifications() {
       // by the SW notificationclick event. This routes through HandleNotificationClick
       // (postMessage path) which does the account switch + deep link reliably on all
       // platforms including iOS where window.Notification onclick is not fired.
-      if ('serviceWorker' in navigator) {
+      if (hasServiceWorker()) {
         try {
           const reg = await navigator.serviceWorker.ready;
           await reg.showNotification(opts.title, {
@@ -257,18 +257,22 @@ export function BackgroundNotifications() {
         }
       }
       if ('Notification' in window && window.Notification.permission === 'granted') {
-        const noti = new window.Notification(opts.title, {
-          icon: opts.icon,
-          badge: opts.badge,
-          body: opts.body,
-          silent: opts.silent ?? false,
-          data: opts.data,
-        });
-        if (opts.onClick) {
-          noti.addEventListener('click', () => {
-            opts.onClick?.();
-            noti.close();
+        try {
+          const noti = new window.Notification(opts.title, {
+            icon: opts.icon,
+            badge: opts.badge,
+            body: opts.body,
+            silent: opts.silent ?? false,
+            data: opts.data,
           });
+          if (opts.onClick) {
+            noti.addEventListener('click', () => {
+              opts.onClick?.();
+              noti.close();
+            });
+          }
+        } catch (err) {
+          debugLog.error('notification', 'Failed to show a background OS notification', err);
         }
       }
     }
@@ -577,6 +581,8 @@ export function BackgroundNotifications() {
                 silent: notificationPayload.options.silent ?? undefined,
                 data: notificationPayload.options.data,
                 onClick: notifOnClick,
+              }).catch((err: unknown) => {
+                debugLog.error('notification', 'Failed to send a background OS notification', err);
               });
             }
           };

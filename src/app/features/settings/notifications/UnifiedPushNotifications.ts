@@ -957,10 +957,12 @@ async function handleMinimalPushPayload(
   let senderName: string | undefined;
   let senderId: string | undefined;
   let previewText: string | undefined;
+  let inMemoryStillEncrypted = false;
   if (room && eventId) {
     const timeline = room.getLiveTimeline().getEvents();
     const mEvent = timeline.find((e) => e.getId() === eventId);
     if (mEvent) {
+      inMemoryStillEncrypted = !holdsPlaintext(mEvent);
       const sender = mEvent.getSender();
       if (sender) {
         const member = room.getMember(sender);
@@ -978,7 +980,7 @@ async function handleMinimalPushPayload(
     }
   }
 
-  const hasInMemoryPreview = Boolean(previewText);
+  const hasInMemoryPreview = Boolean(previewText) && !inMemoryStillEncrypted;
   if (!previewText) {
     previewText = isEncryptedRoom ? 'Encrypted message' : 'New message';
   }

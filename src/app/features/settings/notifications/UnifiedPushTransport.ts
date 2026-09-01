@@ -150,7 +150,7 @@ export async function loadUnifiedPushDistributorState(): Promise<UnifiedPushDist
     return { distributors, selectedDistributor: savedDistributor };
   }
 
-  if (distributors.length === 1) {
+  if (!savedDistributor && distributors.length === 1) {
     const [onlyDistributor] = distributors;
     if (onlyDistributor) {
       await saveUnifiedPushDistributor(onlyDistributor);
@@ -165,11 +165,13 @@ export async function ensureUnifiedPushDistributorSelection(
   distributors: string[],
   selectedDistributor: string
 ): Promise<string> {
-  const distributor =
-    selectedDistributor && distributors.includes(selectedDistributor)
-      ? selectedDistributor
-      : distributors[0];
+  if (selectedDistributor) {
+    if (!distributors.includes(selectedDistributor)) return '';
+    await saveUnifiedPushDistributor(selectedDistributor);
+    return selectedDistributor;
+  }
 
+  const distributor = distributors[0];
   if (!distributor) return '';
 
   await saveUnifiedPushDistributor(distributor);

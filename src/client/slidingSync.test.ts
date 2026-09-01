@@ -1815,7 +1815,7 @@ describe('SlidingSyncManager pause/resume', () => {
     await expect(manager.waitForResume()).resolves.toBeUndefined();
   });
 
-  it('requestPushDrain() flags a drain that clears once to-device comes back empty', () => {
+  it('keeps draining when the first poll lands before the to-device message arrives', () => {
     const manager = makeManager(makeMockMx());
     manager.attach();
     manager.pause();
@@ -1824,7 +1824,14 @@ describe('SlidingSyncManager pause/resume', () => {
     expect(manager.isDrainingPush()).toBe(true);
 
     fireLifecycle(SlidingSyncState.Complete, { extensions: { to_device: { events: [] } } });
+    expect(manager.isDrainingPush()).toBe(true);
 
+    fireLifecycle(SlidingSyncState.Complete, {
+      extensions: { to_device: { events: [{ type: 'm.room.key' }] } },
+    });
+    expect(manager.isDrainingPush()).toBe(true);
+
+    fireLifecycle(SlidingSyncState.Complete, { extensions: { to_device: { events: [] } } });
     expect(manager.isDrainingPush()).toBe(false);
   });
 
@@ -1841,19 +1848,50 @@ describe('SlidingSyncManager pause/resume', () => {
     expect(manager.isDrainingPush()).toBe(false);
   });
 
-  it('gives up on a never-draining queue once the poll budget runs out', () => {
+  it('gives up once the budget of empty polls runs out', () => {
     const MAX_PUSH_DRAIN_POLLS = 5;
     const manager = makeManager(makeMockMx());
     manager.attach();
     manager.requestPushDrain();
 
-    const withKeys = { extensions: { to_device: { events: [{ type: 'm.room.key' }] } } };
+    const empty = { extensions: { to_device: { events: [] } } };
     for (let i = 0; i < MAX_PUSH_DRAIN_POLLS; i += 1) {
       expect(manager.isDrainingPush()).toBe(true);
-      fireLifecycle(SlidingSyncState.Complete, withKeys);
+      fireLifecycle(SlidingSyncState.Complete, empty);
     }
 
     expect(manager.isDrainingPush()).toBe(false);
+  });
+
+  it('does not spend the poll budget while to-device events keep arriving', () => {
+    const manager = makeManager(makeMockMx());
+    manager.attach();
+    manager.requestPushDrain();
+
+    const withKeys = { extensions: { to_device: { events: [{ type: 'm.room.key' }] } } };
+    for (let i = 0; i < 20; i += 1) {
+      fireLifecycle(SlidingSyncState.Complete, withKeys);
+      expect(manager.isDrainingPush()).toBe(true);
+    }
+
+    fireLifecycle(SlidingSyncState.Complete, { extensions: { to_device: { events: [] } } });
+    expect(manager.isDrainingPush()).toBe(false);
+  });
+
+  it('stops draining when no poll ever completes', () => {
+    vi.useFakeTimers();
+    try {
+      const manager = makeManager(makeMockMx());
+      manager.attach();
+      manager.requestPushDrain();
+      expect(manager.isDrainingPush()).toBe(true);
+
+      vi.advanceTimersByTime(120_000);
+
+      expect(manager.isDrainingPush()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not park the transport when a drain settles', () => {

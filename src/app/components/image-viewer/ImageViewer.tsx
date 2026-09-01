@@ -91,9 +91,9 @@ export const ImageViewer = as<'div', ImageViewerProps>(
 
     useEffect(() => {
       if (!isMobile || !isAndroidTauri()) return undefined;
-      void setImmersiveMode({ enabled: true });
+      setImmersiveMode({ enabled: true }).catch(() => {});
       return () => {
-        void setImmersiveMode({ enabled: false });
+        setImmersiveMode({ enabled: false }).catch(() => {});
       };
     }, [isMobile]);
 

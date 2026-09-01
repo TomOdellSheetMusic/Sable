@@ -97,8 +97,10 @@ fn collect_strategy(value: Option<&Value>, method: &str) -> Result<CollectStrate
                 Ok(CollectStrategy::OnlyTrustedDevices)
             } else if flag("errorOnVerifiedUserProblem") {
                 Ok(CollectStrategy::ErrorOnVerifiedUserProblem)
-            } else {
+            } else if flag("allDevices") {
                 Ok(CollectStrategy::AllDevices)
+            } else {
+                Err(format!("{method}: unknown sharing strategy {value:?}"))
             }
         }
         Some(_) => Err(format!(
@@ -268,15 +270,18 @@ pub async fn invoke(
                 .get_missing_sessions(users.iter().map(AsRef::as_ref))
                 .await
             {
-                Ok(Some((txn_id, request))) => Ok(json!({
-                    "type": request_type::KEYS_CLAIM,
-                    "className": "KeysClaimRequest",
-                    "id": txn_id.to_string(),
-                    "body": super::requests::keys_claim_body(
-                        &request.timeout,
-                        &json!(request.one_time_keys),
-                    ),
-                })),
+                Ok(Some((txn_id, request))) => super::requests::keys_claim_body(
+                    &request.timeout,
+                    &json!(request.one_time_keys),
+                )
+                .map(|body| {
+                    json!({
+                        "type": request_type::KEYS_CLAIM,
+                        "className": "KeysClaimRequest",
+                        "id": txn_id.to_string(),
+                        "body": body,
+                    })
+                }),
                 Ok(None) => Ok(Value::Null),
                 Err(e) => Err(format!("getMissingSessions failed: {e}")),
             }

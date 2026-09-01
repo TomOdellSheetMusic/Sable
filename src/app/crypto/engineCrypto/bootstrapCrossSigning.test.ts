@@ -88,6 +88,44 @@ describe('bootstrapCrossSigning', () => {
     expect(requestsTo(authedRequest, '/_matrix/client/v3/keys/signatures/upload')).toHaveLength(1);
   });
 
+  it('refreshes the published keys on both sides of a secret storage import', async () => {
+    engine((method) => {
+      if (method === 'crossSigningStatus') return noKeys;
+      if (method === 'queryKeysForUsers')
+        return { id: 'q1', type: 1, className: 'KeysQueryRequest', body: '{}' };
+      if (method === 'importCrossSigningKeys') return allKeys;
+      if (method === 'device.verify') return { id: null, type: 4, body: '{}' };
+      return undefined;
+    });
+    const { mx, authedRequest } = clientStub({ storage: STORED_KEYS });
+
+    await new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' }).bootstrapCrossSigning({});
+
+    const methods = mockInvoke.mock.calls.map(([, name]) => name);
+    expect(methods.indexOf('queryKeysForUsers')).toBeLessThan(
+      methods.indexOf('importCrossSigningKeys')
+    );
+    expect(methods.lastIndexOf('queryKeysForUsers')).toBeGreaterThan(
+      methods.indexOf('device.verify')
+    );
+    expect(requestsTo(authedRequest, '/_matrix/client/v3/keys/query')).toHaveLength(2);
+  });
+
+  it('refreshes the published keys after blindly cross-signing a device', async () => {
+    engine((method) => {
+      if (method === 'queryKeysForUsers')
+        return { id: 'q1', type: 1, className: 'KeysQueryRequest', body: '{}' };
+      if (method === 'device.verify') return { id: null, type: 4, body: '{}' };
+      return undefined;
+    });
+    const { mx, authedRequest } = clientStub();
+
+    await new EngineCrypto(mx, { userId: '@me:e.org', deviceId: 'D' }).crossSignDevice('OTHER');
+
+    expect(requestsTo(authedRequest, '/_matrix/client/v3/keys/signatures/upload')).toHaveLength(1);
+    expect(requestsTo(authedRequest, '/_matrix/client/v3/keys/query')).toHaveLength(1);
+  });
+
   it('refuses a secret storage import the engine did not actually apply', async () => {
     engine((method) => {
       if (method === 'crossSigningStatus') return noKeys;

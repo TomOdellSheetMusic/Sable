@@ -132,7 +132,13 @@ fn processed_to_device_event_json(
         }
     };
 
-    let mut value = serde_json::to_value(snapshot).ok()?;
+    let mut value = match serde_json::to_value(snapshot) {
+        Ok(value) => value,
+        Err(e) => {
+            log::warn!("Dropping an incoming to-device event we could not serialize: {e}");
+            return None;
+        }
+    };
     if let Some(request) = verification_request {
         value["verificationRequest"] = request;
     }

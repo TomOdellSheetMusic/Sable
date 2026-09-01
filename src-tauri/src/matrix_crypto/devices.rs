@@ -19,6 +19,8 @@ fn device_id(args: &Value, method: &str) -> Result<OwnedDeviceId, String> {
     Ok(str_arg(args, method, "deviceId")?.into())
 }
 
+pub(super) const IDENTITY_QUERY_WAIT: Duration = Duration::from_secs(1);
+
 fn timeout(args: &Value) -> Option<Duration> {
     args.get("timeoutSecs")
         .and_then(Value::as_f64)
@@ -139,7 +141,7 @@ async fn identity_for(
 ) -> Result<Option<UserIdentity>, String> {
     let user = user_id(args, method, "userId")?;
     machine
-        .get_identity(&user, timeout(args))
+        .get_identity(&user, timeout(args).or(Some(IDENTITY_QUERY_WAIT)))
         .await
         .map_err(|e| format!("{method} failed: {e}"))
 }
@@ -189,7 +191,7 @@ fn query_keys_for_users(machine: &OlmMachine, args: &Value, method: &str) -> Res
         "body": super::requests::keys_query_body(
             &request.timeout,
             &json!(request.device_keys),
-        ),
+        )?,
     }))
 }
 

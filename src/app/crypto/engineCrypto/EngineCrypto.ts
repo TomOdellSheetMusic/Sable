@@ -1555,11 +1555,19 @@ export class EngineCrypto
     });
   }
 
+  async #queryOwnKeys(): Promise<void> {
+    await this.#sendTracked(
+      await this.#call('queryKeysForUsers', { users: [this.#identity.userId] })
+    );
+    await this.#flushOutgoingRequests();
+  }
+
   async crossSignDevice(deviceId: string): Promise<void> {
     await this.#sendTracked(
       await this.#call('device.verify', { userId: this.#identity.userId, deviceId })
     );
     await this.#flushOutgoingRequests();
+    await this.#queryOwnKeys();
   }
 
   async isCrossSigningReady(): Promise<boolean> {
@@ -1621,6 +1629,8 @@ export class EngineCrypto
   }
 
   async #importCrossSigningKeys(keys: Record<string, string>): Promise<void> {
+    await this.#queryOwnKeys();
+
     const status = (await this.#call('importCrossSigningKeys', keys)) as {
       hasMaster: boolean;
       hasSelfSigning: boolean;
@@ -1634,7 +1644,10 @@ export class EngineCrypto
       userId: this.#identity.userId,
       deviceId: this.#identity.deviceId,
     })) as OutgoingRequest | null;
-    if (request) await sendOutgoingRequest(this.#mx, request);
+    if (request) {
+      await sendOutgoingRequest(this.#mx, request);
+      await this.#queryOwnKeys();
+    }
   }
 
   async #exportCrossSigningKeysToStorage(): Promise<void> {

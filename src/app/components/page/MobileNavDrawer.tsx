@@ -8,11 +8,12 @@ import {
   useRef,
   useState,
 } from 'react';
+import { Box } from 'folds';
 import { useAtomValue, useSetAtom } from 'jotai';
 import { matchPath, useLocation, useNavigate } from 'react-router';
 import { lastVisitedRoomAtom } from '$state/room/lastRoom';
 import { usePrefersReducedMotion } from '$hooks/usePrefersReducedMotion';
-import { DIRECT_PATH, EXPLORE_PATH, INBOX_PATH, SPACE_PATH } from '$pages/paths';
+import { DIRECT_PATH, EXPLORE_PATH, HOME_PATH, INBOX_PATH, SPACE_PATH } from '$pages/paths';
 import { resolveSection } from '$pages/pathUtils';
 import { matchRoomRoute } from '$pages/roomRouteMatch';
 import { PersistentRoomHost } from './PersistentRoomHost';
@@ -63,7 +64,10 @@ export function MobileNavDrawer({ nav, rail, bottomNav, children }: MobileNavDra
 
   const listView =
     matchPath({ path: DIRECT_PATH, end: true }, location.pathname) !== null ||
-    matchPath({ path: SPACE_PATH, end: true }, location.pathname) !== null ||
+    // SPACE_PATH is a catch-all first segment, so exclude the literal home path
+    // (which would otherwise be treated as a space id "home").
+    (matchPath({ path: SPACE_PATH, end: true }, location.pathname) !== null &&
+      matchPath({ path: HOME_PATH, end: true }, location.pathname) === null) ||
     matchPath({ path: EXPLORE_PATH, end: true }, location.pathname) !== null ||
     matchPath({ path: INBOX_PATH, end: true }, location.pathname) !== null;
   const contentOpen = !listView;
@@ -187,6 +191,17 @@ export function MobileNavDrawer({ nav, rail, bottomNav, children }: MobileNavDra
     },
     [navigate, settleToPanel, width]
   );
+
+  const openNav = useCallback(() => {
+    if (width === 0) return;
+    programmaticTargetRef.current = 0;
+    settleToPanel(0, () => {
+      if (programmaticTargetRef.current === 0) {
+        programmaticTargetRef.current = undefined;
+      }
+      setPanelIntent(0);
+    });
+  }, [settleToPanel, width]);
 
   useLayoutEffect(() => {
     const el = viewportRef.current;
@@ -326,11 +341,11 @@ export function MobileNavDrawer({ nav, rail, bottomNav, children }: MobileNavDra
   }, []);
 
   const contextValue = useMemo(
-    () => ({ openContent, registerChatSwipe, registerMessageSwipe }),
-    [openContent, registerChatSwipe, registerMessageSwipe]
+    () => ({ openContent, openNav, registerChatSwipe, registerMessageSwipe }),
+    [openContent, openNav, registerChatSwipe, registerMessageSwipe]
   );
 
-  const drawer = (
+  const innerViewport = (
     <div
       ref={viewportRef}
       className="no-scrollbar"
@@ -484,7 +499,6 @@ export function MobileNavDrawer({ nav, rail, bottomNav, children }: MobileNavDra
               {nav}
             </div>
           </div>
-          {bottomNav}
         </div>
         <div
           ref={contentPanelRef}
@@ -514,7 +528,16 @@ export function MobileNavDrawer({ nav, rail, bottomNav, children }: MobileNavDra
     </div>
   );
 
-  return (
-    <MobileNavDrawerContext.Provider value={contextValue}>{drawer}</MobileNavDrawerContext.Provider>
+  const drawer = (
+    <MobileNavDrawerContext.Provider value={contextValue}>
+      <Box direction="Column" grow="Yes" style={{ minWidth: 0 }}>
+        <Box grow="Yes" style={{ minHeight: 0 }}>
+          {innerViewport}
+        </Box>
+        {bottomNav}
+      </Box>
+    </MobileNavDrawerContext.Provider>
   );
+
+  return drawer;
 }

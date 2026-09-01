@@ -8,12 +8,14 @@ import { roomToParentsAtom } from '$state/room/roomToParents';
 import { allRoomsAtom } from '$state/room-list/roomList';
 import { roomToUnreadAtom } from '$state/room/roomToUnread';
 import { getHomePath } from '$pages/pathUtils';
+import { ScreenSize, useScreenSizeContext } from '$hooks/useScreenSize';
 import { useRoomsUnread } from '$state/hooks/unread';
 import { SidebarTab } from '$components/sidebar';
 import { useHomeSelected } from '$hooks/router/useRouteSelected';
 import { House, getPhosphorIconSize } from '$components/icons/phosphor';
 import { useMenuAnchor } from '$hooks/useMenuAnchor';
 import { NavMenu } from '$components/nav/NavMenu';
+import { useOpenMobileDrawerContent } from '$components/page/MobileNavDrawerContext';
 import { useHomeRooms } from '$pages/client/home/useHomeRooms';
 
 type HomeMenuProps = {
@@ -29,6 +31,9 @@ HomeMenu.displayName = 'HomeMenu';
 export function HomeTab() {
   const navigate = useNavigate();
   const mx = useMatrixClient();
+  const screenSize = useScreenSizeContext();
+  const isMobile = screenSize === ScreenSize.Mobile;
+  const openMobileDrawerContent = useOpenMobileDrawerContent();
 
   const mDirects = useAtomValue(mDirectAtom);
   const roomToParents = useAtomValue(roomToParentsAtom);
@@ -38,6 +43,11 @@ export function HomeTab() {
   const menuAnchor = useMenuAnchor<HTMLButtonElement>();
 
   const handleHomeClick = () => {
+    if (isMobile && openMobileDrawerContent) {
+      // Open content and slide the drawer back to it, even when already on /home/.
+      openMobileDrawerContent(getHomePath());
+      return;
+    }
     navigate(getHomePath());
   };
 

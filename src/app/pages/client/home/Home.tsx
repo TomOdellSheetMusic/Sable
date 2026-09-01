@@ -44,6 +44,7 @@ import { useCategoryHandler } from '$hooks/useCategoryHandler';
 import { useNavToActivePathMapper } from '$hooks/useNavToActivePathMapper';
 import { PageNavHeaderWithMenu, PageNavContent } from '$components/page';
 import { PageNavShell } from '$components/page/PageNavShell';
+import { useOpenMobileDrawerContent } from '$components/page/MobileNavDrawerContext';
 import { useClosedNavCategoriesAtom } from '$state/hooks/closedNavCategories';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom, ShowRoomIcon } from '$state/settings';
@@ -182,6 +183,14 @@ export function Home() {
     hideText,
     oldSidebar,
   } = useSidebarWidth();
+  const openMobileDrawerContent = useOpenMobileDrawerContent();
+  const openHome = () => {
+    if (isMobile && openMobileDrawerContent) {
+      openMobileDrawerContent(getHomePath());
+      return;
+    }
+    navigate(getHomePath());
+  };
 
   const [showRoomIconGeneral] = useSetting(settingsAtom, 'showRoomIcon');
   const [showRoomIconArray] = useSetting(settingsAtom, 'perRoomShowRoomIcon');
@@ -275,7 +284,7 @@ export function Home() {
           <Box direction="Column" gap="300">
             <NavCategory>
               <NavItem variant="Background" radii="400" aria-selected={homeSelected}>
-                <NavButton onClick={() => navigate(getHomePath())}>
+                <NavButton onClick={openHome}>
                   <NavItemContent>
                     <Box as="span" grow="Yes" alignItems="Center" justifyContent="Start" gap="200">
                       <Avatar

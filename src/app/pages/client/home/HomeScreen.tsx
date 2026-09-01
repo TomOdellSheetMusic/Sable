@@ -6,11 +6,13 @@ import {
   ChatCircleDots,
   House,
   Phone,
+  TextAlignLeft,
   VideoCamera,
   sizedIcon,
   userFallbackIcon,
 } from '$components/icons/phosphor';
-import { Page, PageContent, PageHero, PageHeroSection } from '$components/page';
+import { Page, PageContent, PageHeader, PageHero, PageHeroSection } from '$components/page';
+import { useOpenMobileDrawerNav } from '$components/page/MobileNavDrawerContext';
 import { useRoomNavigate } from '$hooks/useRoomNavigate';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useHomeRooms } from './useHomeRooms';
@@ -304,6 +306,7 @@ export function HomeScreen() {
   const roomToUnread = useAtomValue(roomToUnreadAtom);
   const selectedRoomId = useSelectedOrLastRoom();
   const compact = useCompactLayout();
+  const openNav = useOpenMobileDrawerNav();
 
   const orderedRooms = useMemo(
     () => Array.from(rooms).toSorted(factoryRoomIdByActivity(mx)),
@@ -321,6 +324,22 @@ export function HomeScreen() {
 
   return (
     <Page>
+      {compact && (
+        <PageHeader balance outlined={false}>
+          <Box grow="Yes" alignItems="Center" gap="200">
+            <IconButton
+              onClick={() => openNav?.()}
+              aria-label="Open navigation"
+              variant="Background"
+            >
+              {sizedIcon(TextAlignLeft, '300')}
+            </IconButton>
+            <Text size="H4" truncate>
+              Home
+            </Text>
+          </Box>
+        </PageHeader>
+      )}
       <Box grow="Yes">
         <Scroll hideTrack visibility="Hover">
           <PageContent>

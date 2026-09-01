@@ -6,15 +6,17 @@ import {
 } from '$components/sidebar';
 import { getPhosphorIconSize } from '$components/icons/phosphor';
 import { matchPath, useNavigate } from 'react-router';
-import { HOME_PATH, SETTINGS_PATH } from '$pages/paths';
+import { SETTINGS_PATH } from '$pages/paths';
 import { ChatTextIcon } from '@phosphor-icons/react';
 import { useAtomValue } from 'jotai';
 import { useInboxSelected } from '$hooks/router/useRouteSelected';
 import { Box, color, Text, toRem } from 'folds';
 import { useNavigateSelected } from '$hooks/router/useRouteSelected';
 import { useProfileSelected } from '$hooks/router/useRouteSelected';
-import { getSpacePath } from '$pages/pathUtils';
-import { lastVisitedSpaceIdAtom } from '$state/room/lastSpace';
+import { getHomeRoomPath, getSpaceRoomPath } from '$pages/pathUtils';
+import { lastVisitedRoomAtom } from '$state/room/lastRoom';
+import { useMatrixClient } from '$hooks/useMatrixClient';
+import { getCanonicalAliasOrRoomId } from '$utils/matrix';
 import { allRoomsAtom } from '$state/room-list/roomList';
 import { useRoomsUnread } from '$state/hooks/unread';
 import { roomToUnreadAtom } from '$state/room/roomToUnread';
@@ -28,7 +30,8 @@ export function MessageTab({ isBottom, isMobile }: { isBottom?: boolean; isMobil
   const unread = useRoomsUnread(rooms, roomToUnreadAtom);
 
   const navigate = useNavigate();
-  const lastSpaceId = useAtomValue(lastVisitedSpaceIdAtom);
+  const mx = useMatrixClient();
+  const lastRoom = useAtomValue(lastVisitedRoomAtom);
   const navigateRouteActive = useNavigateSelected();
   const profileRouteActive = useProfileSelected();
   const inboxSelected = useInboxSelected();
@@ -39,12 +42,20 @@ export function MessageTab({ isBottom, isMobile }: { isBottom?: boolean; isMobil
     inboxSelected
   );
   const onBack = () => {
-    if (!lastSpaceId) {
-      navigate(HOME_PATH);
+    // Jump to the last-opened message/room if there is one, otherwise land on
+    // the home overview (which surfaces People/contacts at the top).
+    const sections = Object.entries(lastRoom ?? {});
+    const [sectionKey, roomIdOrAlias] = sections[sections.length - 1] ?? [];
+    if (sectionKey && roomIdOrAlias) {
+      if (sectionKey.startsWith('space:')) {
+        const spaceIdOrAlias = sectionKey.slice('space:'.length);
+        navigate(getSpaceRoomPath(spaceIdOrAlias, getCanonicalAliasOrRoomId(mx, roomIdOrAlias)));
+        return;
+      }
+      navigate(getHomeRoomPath(getCanonicalAliasOrRoomId(mx, roomIdOrAlias)));
       return;
     }
-
-    navigate(getSpacePath(lastSpaceId));
+    navigate('/home/');
   };
   const mobileTapActivation = useMobileTapActivation(isMobile ?? false, onBack, onBack);
 

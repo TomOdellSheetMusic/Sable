@@ -511,7 +511,7 @@ pub fn run() {
             desktop::tray::set_toggle_window_shortcut,
             #[cfg(desktop)]
             desktop::tray::sync_desktop_settings,
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             desktop::tray_badge::set_tray_badge,
             #[cfg(windows)]
             desktop::windows::snap_overlay::show_snap_overlay,

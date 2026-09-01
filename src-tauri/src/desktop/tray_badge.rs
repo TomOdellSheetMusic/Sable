@@ -31,16 +31,24 @@ fn render_badged_icon(base: &Image<'_>) -> Image<'static> {
 
     let diameter = w.min(h) * 0.4;
     let radius = diameter / 2.0;
-    let cx = w - radius - w * 0.04;
-    let cy = h - radius - h * 0.04;
+    // Bottom-right corner: a thin inset flag-style badge that doesn't clash
+    // with the purple Sable glyph (which sits center/left of the icon).
+    let outline_w = (w.min(h) * 0.06).max(1.5);
+    let cx = w - radius - outline_w - w * 0.04;
+    let cy = h - radius - outline_w - h * 0.04;
+    let outer_radius = radius + outline_w;
 
     let red: [f32; 3] = [0.878, 0.176, 0.176];
+    let white: [f32; 3] = [1.0, 1.0, 1.0];
 
-    let x0 = (cx - radius - 1.0).floor().max(0.0) as u32;
-    let y0 = (cy - radius - 1.0).floor().max(0.0) as u32;
-    let x1 = ((cx + radius + 1.0).ceil() as u32).min(width);
-    let y1 = ((cy + radius + 1.0).ceil() as u32).min(height);
+    let x0 = (cx - outer_radius - 1.0).floor().max(0.0) as u32;
+    let y0 = (cy - outer_radius - 1.0).floor().max(0.0) as u32;
+    let x1 = ((cx + outer_radius + 1.0).ceil() as u32).min(width);
+    let y1 = ((cy + outer_radius + 1.0).ceil() as u32).min(height);
 
+    // Paint the white outline first, then the red dot on top. The white ring
+    // keeps the red dot visible against backgrounds of similar hue (e.g. the
+    // purple Sable icon) for colorblind users who rely on luminance, not hue.
     for py in y0..y1 {
         for px in x0..x1 {
             let dx = px as f32 + 0.5 - cx;
@@ -49,14 +57,16 @@ fn render_badged_icon(base: &Image<'_>) -> Image<'static> {
 
             // Hard edge: antialiased pixels turn into a visible ring once the
             // tray premultiplies the pixmap, so keep every dot pixel opaque.
-            if dist > radius {
+            if dist > outer_radius {
                 continue;
             }
 
             let idx = ((py * width + px) * 4) as usize;
-            rgba[idx] = (red[0] * 255.0).round() as u8;
-            rgba[idx + 1] = (red[1] * 255.0).round() as u8;
-            rgba[idx + 2] = (red[2] * 255.0).round() as u8;
+            // White ring (outline) where the pixel sits beyond the red dot.
+            let color = if dist > radius { &white } else { &red };
+            rgba[idx] = (color[0] * 255.0).round() as u8;
+            rgba[idx + 1] = (color[1] * 255.0).round() as u8;
+            rgba[idx + 2] = (color[2] * 255.0).round() as u8;
             rgba[idx + 3] = 255;
         }
     }
@@ -114,8 +124,13 @@ mod tests {
         let height = 32;
         let base = Image::new_owned(vec![0u8; (width * height * 4) as usize], width, height);
         let out = render_badged_icon(&base);
+        // The dot sits in the bottom-right corner.
         let idx = (((height - 7) * width + (width - 7)) * 4) as usize;
-        assert!(out.rgba()[idx + 3] > 0);
+        assert!(out.rgba()[idx + 3] > 0, "dot should be drawn in the bottom-right");
+        // A pixel further out should still be opaque (the white outline).
+        let outer_idx = (((height - 9) * width + (width - 9)) * 4) as usize;
+        assert_eq!(out.rgba()[outer_idx + 3], 255, "outline should be opaque");
+        // Top-left stays untouched (keep the original icon pixels).
         assert_eq!(&out.rgba()[0..4], &[0, 0, 0, 0]);
     }
 

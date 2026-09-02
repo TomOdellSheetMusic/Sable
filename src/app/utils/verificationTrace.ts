@@ -22,6 +22,16 @@ export const traceVerification = (message: string, data: TraceData = {}): void =
   Sentry.logger.info(`[crypto:verification] ${message}`, attributes(data));
 };
 
+export const warnToDevice = (message: string, data: TraceData = {}): void => {
+  Sentry.addBreadcrumb({
+    category: 'crypto.to-device',
+    message,
+    level: 'warning',
+    data: attributes(data),
+  });
+  Sentry.logger.warn(`[crypto:to-device] ${message}`, attributes(data));
+};
+
 export const warnVerification = (message: string, data: TraceData = {}): void => {
   Sentry.addBreadcrumb({
     category: 'crypto.verification',

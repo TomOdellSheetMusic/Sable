@@ -37,7 +37,7 @@ import { secretStorageCanAccessSecrets } from './secretStorageAccess';
 import { PerSessionBackupDownloader } from './perSessionBackupDownload';
 import type { CryptoEventHandlerMap } from 'matrix-js-sdk/lib/crypto-api/CryptoEventHandlerMap';
 import { createDebugLogger } from '$utils/debugLogger';
-import { traceVerification, warnVerification } from '$utils/verificationTrace';
+import { traceVerification, warnToDevice, warnVerification } from '$utils/verificationTrace';
 import { EngineVerificationRequest } from '../verification/request';
 import {
   EnginePhase,
@@ -238,6 +238,20 @@ type EngineDecryptedEvent = {
   forwardingCurve25519KeyChain?: string[];
   forwarder?: string | null;
   forwarderDevice?: string | null;
+};
+
+const countRecipients = (body: string): number => {
+  try {
+    const messages = (JSON.parse(body) as { messages?: Record<string, Record<string, unknown>> })
+      .messages;
+    if (!messages) return 0;
+    return Object.values(messages).reduce(
+      (total, devices) => total + Object.keys(devices).length,
+      0
+    );
+  } catch {
+    return -1;
+  }
 };
 
 const isOutgoingRequest = (value: unknown): value is OutgoingRequest => {
@@ -604,7 +618,33 @@ export class EngineCrypto
       outgoingRequest?: unknown;
     };
     if (isOutgoingRequest(started.outgoingRequest)) {
-      await sendOutgoingRequest(this.#mx, started.outgoingRequest);
+      const recipients = countRecipients(started.outgoingRequest.body);
+      traceVerification('Sending a verification request', {
+        method,
+        flowId: started.request.flowId,
+        recipientDevices: recipients,
+      });
+      if (recipients === 0) {
+        warnVerification('The verification request reaches no device', {
+          method,
+          flowId: started.request.flowId,
+        });
+      }
+      try {
+        await sendOutgoingRequest(this.#mx, started.outgoingRequest);
+      } catch (error) {
+        warnVerification('The verification request could not be sent', {
+          method,
+          flowId: started.request.flowId,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    } else {
+      warnVerification('The engine returned no verification request to send', {
+        method,
+        flowId: started.request.flowId,
+      });
     }
     await this.#flushOutgoingRequests();
 
@@ -739,6 +779,7 @@ export class EngineCrypto
     }
     const request = new EngineVerificationRequest(this.#engineCall, state);
     this.#verificationRequests.set(transactionId, request);
+    if (state.phase === EnginePhase.Done || state.phase === EnginePhase.Cancelled) return true;
     traceVerification('Surfacing an incoming verification request', {
       sender,
       transactionId,
@@ -881,8 +922,15 @@ export class EngineCrypto
         });
       } else if (event.type === ProcessedToDeviceEventType.PlainText) {
         received.push({ message, encryptionInfo: null });
+      } else {
+        // Dropped like js-sdk's backend does, but an unreadable one carries no type, so a
+        // verification request lost here is invisible everywhere else.
+        warnToDevice('Dropped a to-device event the engine could not read', {
+          sender: message.sender ?? 'unknown',
+          type: message.type ?? 'unknown',
+          processed: event.type,
+        });
       }
-      // Undecryptable and invalid events are dropped, as js-sdk's own backend does.
     }
 
     return received;
@@ -1965,7 +2013,50 @@ export class EngineCrypto
     return request;
   }
 
+  async #cancelStaleRequests(userId: string): Promise<void> {
+    let states: EngineVerificationState[] = [];
+    try {
+      states = ((await this.#call('getVerificationRequests', { userId })) ??
+        []) as EngineVerificationState[];
+    } catch (error) {
+      warnVerification('Could not list stale verification requests', {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    const stale = new Map<string, EngineVerificationRequest>();
+    for (const state of states) {
+      if (state.phase === EnginePhase.Done || state.phase === EnginePhase.Cancelled) continue;
+      stale.set(
+        state.flowId,
+        this.#verificationRequests.get(state.flowId) ??
+          new EngineVerificationRequest(this.#engineCall, state)
+      );
+    }
+    for (const request of this.#verificationRequests.values()) {
+      if (request.otherUserId === userId && request.pending && request.transactionId) {
+        stale.set(request.transactionId, request);
+      }
+    }
+
+    for (const [flowId, request] of stale) {
+      traceVerification('Cancelling a stale verification request', { flowId });
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await request.cancel();
+        this.#verificationRequests.delete(flowId);
+      } catch (error) {
+        warnVerification('Could not cancel a stale verification request', {
+          flowId,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    await this.#flushOutgoingRequests();
+  }
+
   async requestOwnUserVerification(): Promise<VerificationRequest> {
+    await this.#cancelStaleRequests(this.#identity.userId);
     return this.#startVerification('userIdentity.requestVerification', {
       userId: this.#identity.userId,
       methods: SUPPORTED_VERIFICATION_METHOD_CODES,
@@ -1973,6 +2064,7 @@ export class EngineCrypto
   }
 
   async requestDeviceVerification(userId: string, deviceId: string): Promise<VerificationRequest> {
+    await this.#cancelStaleRequests(userId);
     await this.#sendTracked(await this.#call('queryKeysForUsers', { users: [userId] }));
     await this.#flushOutgoingRequests();
     return this.#startVerification('device.requestVerification', {

@@ -183,7 +183,7 @@ pub fn show_or_create_main_window(app: &AppHandle<crate::BrowserEngine>) -> taur
         .title(title)
         .resizable(true)
         .fullscreen(false)
-        .inner_size(1280.0, 720.0)
+        .inner_size(1280.0, 745.0)
         .visible(false);
 
     #[cfg(target_os = "macos")]

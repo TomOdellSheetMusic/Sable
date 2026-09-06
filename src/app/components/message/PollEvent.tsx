@@ -1,4 +1,4 @@
-import { Box, Button, Checkbox, Line, Modal, ProgressBar, RadioButton, Text } from 'folds';
+import { Box, Button, Checkbox, Line, Modal, RadioButton, Text } from 'folds';
 import type { MatrixClient, PollStartSubtype, Room, TimelineEvents } from 'matrix-js-sdk';
 import { M_TEXT } from 'matrix-js-sdk';
 import {
@@ -12,6 +12,7 @@ import {
   type MatrixEvent,
 } from 'matrix-js-sdk';
 import { MsgType, RelationType } from '$types/matrix-sdk';
+import classNames from 'classnames';
 import * as css from './PollEvent.css';
 import { useCallback, useEffect, useState } from 'react';
 import { PollResponsesViewer } from '$features/room/poll-modals';
@@ -257,69 +258,90 @@ export function PollEvent({ content, mEvent, mx, room }: PollEventProps) {
     <>
       <Box direction="Column" className={css.PollEvent} grow="Yes" gap="200">
         <Box className={css.PollHeader} shrink="No">
-          <Text>{questionBody} </Text>
+          <Text className={css.PollQuestion}>{questionBody} </Text>
         </Box>
         <Line direction="Horizontal" variant="SurfaceVariant" className={css.PollEventSeparator} />
-        <Box direction="Column" grow="Yes" shrink="No" gap="300" className={css.PollAnswersBody}>
+        <Box direction="Column" grow="Yes" shrink="No" gap="200" className={css.PollAnswersBody}>
           {answers.map((item) => {
             const optionBody = item[M_TEXT.name];
-            const voteCount = votes[item.id];
+            const voteCount = votes[item.id] ?? 0;
             const isSelected = userSelection?.includes(item.id);
-            return (
-              <Box key={item.id} gap="100" direction="Column" className={css.PollAnswerItem}>
-                <Box gap="100" alignItems="Center">
-                  {maxSelections === 1 ? (
-                    <RadioButton
-                      size="100"
-                      aria-disabled={isEnded}
-                      disabled={isEnded}
-                      checked={isSelected}
-                      aria-label={`${isSelected ? 'Remove vote from' : 'vote for'} ${optionBody}`}
-                      variant={isSelected ? 'Primary' : 'Secondary'}
-                      onClick={() => handleNewVote(item.id)}
-                    />
-                  ) : (
-                    <Checkbox
-                      size="100"
-                      aria-disabled={isEnded}
-                      disabled={isEnded}
-                      checked={isSelected}
-                      aria-label={`${isSelected ? 'Remove vote from' : 'vote for'} ${optionBody}`}
-                      variant={isSelected ? 'Primary' : 'Secondary'}
-                      onClick={() => handleNewVote(item.id)}
-                    />
-                  )}
-                  <Box justifyContent="SpaceBetween" grow="Yes" alignItems="Center">
-                    <Text>{optionBody}</Text>
+            const percent = voters.size ? (voteCount / voters.size) * 100 : 0;
 
+            const inputProps = {
+              'aria-disabled': isEnded,
+              disabled: isEnded,
+              checked: isSelected,
+              'aria-label': `${isSelected ? 'Remove vote from' : 'vote for'} ${optionBody}`,
+              variant: isSelected ? ('Primary' as const) : ('Secondary' as const),
+              onClick: () => handleNewVote(item.id),
+            };
+
+            return (
+              <Box
+                key={item.id}
+                gap="100"
+                direction="Column"
+                className={classNames(css.PollAnswerItem, {
+                  [css.PollAnswerItemSelected]: isSelected,
+                  [css.PollAnswerItemClickable]: !isEnded,
+                })}
+              >
+                {showAnswers && (
+                  <Box className={css.PollAnswerBar}>
+                    <Box
+                      className={classNames(css.PollAnswerBarFill, {
+                        [css.PollAnswerBarFillSelected]: isSelected,
+                      })}
+                      as="span"
+                      style={{ width: `${percent}%` }}
+                      title={voteCount ? `${Math.round(percent)}%` : '0%'}
+                    />
+                  </Box>
+                )}
+                <Box className={css.PollAnswerContent}>
+                  <Box className={css.PollAnswerRow} grow="Yes">
+                    <Box className={css.PollAnswerText}>
+                      <Text>{optionBody}</Text>
+                    </Box>
                     {showAnswers && (
-                      <Text
-                        size="T200"
-                        className={css.PollAnswerCount}
-                        onClick={() => setViewVotersAnswer(item)}
-                      >
-                        {`(${voteCount} vote${voteCount !== 1 ? 's' : ''})`}
-                      </Text>
+                      <Box alignItems="Center" gap="100" shrink="No">
+                        {isSelected && (
+                          <Text size="T200" className={css.PollAnswerVotedLabel}>
+                            Checked
+                          </Text>
+                        )}
+                        <Text
+                          size="T200"
+                          className={classNames(css.PollAnswerPercent, {
+                            [css.PollAnswerPercentSelected]: isSelected,
+                          })}
+                        >
+                          {`${Math.round(percent)}%`}
+                        </Text>
+                        <Text
+                          size="T200"
+                          className={css.PollAnswerCount}
+                          onClick={() => setViewVotersAnswer(item)}
+                        >
+                          {`(${voteCount} vote${voteCount !== 1 ? 's' : ''})`}
+                        </Text>
+                      </Box>
+                    )}
+                    {maxSelections === 1 ? (
+                      <RadioButton size="200" {...inputProps} />
+                    ) : (
+                      <Checkbox size="200" {...inputProps} />
                     )}
                   </Box>
                 </Box>
-                {(isDisclosed || isEnded) && (
-                  <ProgressBar
-                    size="400"
-                    value={showAnswers ? (voteCount ?? 0) / voters.size : 0}
-                    max={1}
-                    variant={isSelected ? 'Primary' : 'Secondary'}
-                    title={voteCount ? `${Math.round((voteCount / voters.size) * 100)}%` : '0%'}
-                    className={css.PollAnswerBar}
-                  />
-                )}
               </Box>
             );
           })}
           <Box gap="200" grow="Yes" shrink="No" justifyContent="SpaceBetween" alignItems="Center">
             {showAnswers ? (
-              <Text size="T200">
-                {`${totalVotes} vote${totalVotes !== 1 ? 's' : ''} ${totalVotes !== voters.size ? `by ${voters.size} voter${voters.size !== 1 ? 's' : ''}` : ''}`}
+              <Text size="T200" className={css.PollTotal}>
+                {`${totalVotes} vote${totalVotes !== 1 ? 's' : ''}${totalVotes !== voters.size ? ` · ${voters.size} voter${voters.size !== 1 ? 's' : ''}` : ''}`}
               </Text>
             ) : isDisclosed ? (
               <Text onClick={() => setIsSnooping(true)} style={{ cursor: 'pointer' }} size="T200">

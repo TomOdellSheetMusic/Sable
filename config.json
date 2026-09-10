@@ -3,11 +3,17 @@
   "defaultHomeserver": 0,
   "homeserverList": [
     "matrix.tachyonproductions.de",
+
     "matrix.org",
+
     "mozilla.org",
+
     "unredacted.org",
+
     "sable.moe",
-    "kendama.moe"
+
+    "kendama.moe",
+    "hopium.club"
   ],
   "allowCustomHomeservers": true,
   "elementCallUrl": null,

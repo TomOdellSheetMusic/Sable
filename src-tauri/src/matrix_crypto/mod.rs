@@ -7,10 +7,7 @@ pub mod cross_signing;
 pub mod devices;
 pub mod dispatch;
 pub mod events;
-#[cfg(target_os = "android")]
-pub mod jni_push;
 pub mod message_flow;
-pub mod push;
 pub mod requests;
 pub mod rooms;
 pub mod verification;
@@ -78,6 +75,10 @@ impl CryptoEngineState {
             .is_some())
     }
 
+    /// Test-only helper: close the account only if it currently holds the given
+    /// machine (used to avoid racing a concurrent re-open). Only compiled under
+    /// `#[cfg(test)]` because no production code path uses it.
+    #[cfg(test)]
     pub fn close_account_if(&self, account: &str, machine: &Arc<OlmMachine>) -> Result<(), String> {
         let removed = {
             let mut machines = self.machines.lock().map_err(|e| e.to_string())?;
@@ -152,6 +153,10 @@ pub fn store_subpath(user_id: &str, device_id: &str) -> PathBuf {
     PathBuf::from("matrix-crypto").join(account)
 }
 
+fn store_db_path(dir: &Path) -> PathBuf {
+    dir.join("matrix-sdk-crypto.sqlite3")
+}
+
 /// Per-account store directory. Resolved here rather than passed in so the
 /// webview never has to know an absolute path, and so the native notification
 /// handler can derive the same location independently.
@@ -168,6 +173,23 @@ fn store_dir(
             .map_err(|e| format!("resolving app data dir failed: {e}"))?,
     };
     Ok(base.join(store_subpath(user_id, device_id)))
+}
+
+async fn store_exists_at(dir: &Path) -> Result<bool, String> {
+    match tokio::fs::metadata(store_db_path(dir)).await {
+        Ok(metadata) => Ok(metadata.is_file()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!("checking crypto store failed: {error}")),
+    }
+}
+
+#[tauri::command]
+pub async fn engine_store_exists(
+    app: tauri::AppHandle<crate::BrowserEngine>,
+    user_id: String,
+    device_id: String,
+) -> Result<bool, String> {
+    store_exists_at(&store_dir(&app, &user_id, &device_id)?).await
 }
 
 pub(super) static OPEN_GUARD: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -199,7 +221,7 @@ pub(super) async fn open_machine_locked(
     tokio::fs::create_dir_all(dir)
         .await
         .map_err(|e| e.to_string())?;
-    let db_path = dir.join("matrix-sdk-crypto.sqlite3");
+    let db_path = store_db_path(dir);
 
     let account = account_key(user_id, device_id);
     engines().close_account(&account)?;
@@ -327,6 +349,29 @@ mod tests {
             !account.contains(['/', ':', '|', '\\', '<', '>', '"', '?', '*']),
             "{account}"
         );
+    }
+
+    #[tokio::test]
+    async fn store_exists_does_not_create_a_missing_store() {
+        let dir =
+            std::env::temp_dir().join(format!("sable-store-exists-missing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(!store_exists_at(&dir).await.unwrap());
+        assert!(!dir.exists());
+    }
+
+    #[tokio::test]
+    async fn store_exists_only_accepts_the_crypto_database_file() {
+        let dir =
+            std::env::temp_dir().join(format!("sable-store-exists-present-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(store_db_path(&dir), b"placeholder").unwrap();
+
+        assert!(store_exists_at(&dir).await.unwrap());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]

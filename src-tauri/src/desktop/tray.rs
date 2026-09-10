@@ -6,7 +6,7 @@ use crate::desktop::settings::{
     desktop_settings_from_values, tray_available_for_session, use_custom_title_bar_default,
     DesktopSettings, CLOSE_TO_BACKGROUND_ON_CLOSE_KEY, DEAFEN_HOTKEY_KEY, DESKTOP_SETTINGS_PATH,
     LEGACY_KEEP_BACKGROUND_RUNNING_KEY, MIC_HOTKEY_KEY, SHOW_SYSTEM_TRAY_ICON_KEY, SPELLCHECK_KEY,
-    USE_CUSTOM_TITLE_BAR_KEY,
+    TOGGLE_WINDOW_SHORTCUT_KEY, USE_CUSTOM_TITLE_BAR_KEY,
 };
 use serde_json::json;
 use tauri::{
@@ -33,6 +33,10 @@ pub struct DesktopSettingsState {
     /// Currently-registered call hotkeys (`None` means the default is active).
     mic_hotkey: Mutex<Option<String>>,
     deafen_hotkey: Mutex<Option<String>>,
+    /// Currently registered toggle-window global shortcut in web hotkey format,
+    /// or `None` when the feature is disabled. Tracked so `desktop_runtime_state`
+    /// can report it without re-reading the store.
+    toggle_window_shortcut: Mutex<Option<String>>,
 }
 
 impl Default for DesktopSettingsState {
@@ -45,7 +49,18 @@ impl Default for DesktopSettingsState {
             tray_available: AtomicBool::new(false),
             mic_hotkey: Mutex::new(None),
             deafen_hotkey: Mutex::new(None),
+            toggle_window_shortcut: Mutex::new(None),
         }
+    }
+}
+
+impl DesktopSettingsState {
+    pub(crate) fn toggle_window_shortcut(&self) -> Option<String> {
+        self.toggle_window_shortcut.lock().unwrap().clone()
+    }
+
+    pub(crate) fn set_toggle_window_shortcut(&self, binding: Option<String>) {
+        *self.toggle_window_shortcut.lock().unwrap() = binding;
     }
 }
 
@@ -59,6 +74,7 @@ pub fn setup_close_to_background(webview_window: &WebviewWindow<crate::BrowserEn
         if state.close_to_background_on_close.load(Ordering::Relaxed)
             && can_restore_from_background(DesktopRuntimeState {
                 tray_available: state.tray_available.load(Ordering::Relaxed),
+                toggle_window_shortcut: state.toggle_window_shortcut(),
             })
         {
             api.prevent_close();
@@ -150,17 +166,60 @@ pub(crate) fn current_desktop_settings(app: &AppHandle<crate::BrowserEngine>) ->
 }
 
 fn desktop_runtime_state(app: &AppHandle<crate::BrowserEngine>) -> DesktopRuntimeState {
+    let state = app.state::<DesktopSettingsState>();
     DesktopRuntimeState {
-        tray_available: app
-            .state::<DesktopSettingsState>()
-            .tray_available
-            .load(Ordering::Relaxed),
+        tray_available: state.tray_available.load(Ordering::Relaxed),
+        toggle_window_shortcut: state.toggle_window_shortcut(),
     }
 }
 
 #[tauri::command]
 pub fn get_desktop_runtime_state(app: AppHandle<crate::BrowserEngine>) -> DesktopRuntimeState {
     desktop_runtime_state(&app)
+}
+
+/// Set the global toggle-window shortcut. `binding` is in web hotkey format
+/// (`"mod+shift+s"`); `None` disables the feature. Persists to the desktop
+/// preferences store, registers (or unregisters) the OS accelerator, and
+/// returns the refreshed runtime state.
+#[tauri::command]
+pub fn set_toggle_window_shortcut(
+    app: AppHandle<crate::BrowserEngine>,
+    binding: Option<String>,
+) -> Result<DesktopRuntimeState, String> {
+    let state = app.state::<DesktopSettingsState>();
+
+    crate::desktop::menu::apply_toggle_window_shortcut(&app, binding.as_deref())?;
+
+    // Persist after a successful (un)registration so the store never claims a
+    // binding the OS rejected.
+    app.store(DESKTOP_SETTINGS_PATH)
+        .map_err(|error| error.to_string())?
+        .set(TOGGLE_WINDOW_SHORTCUT_KEY, json!(binding));
+
+    state.set_toggle_window_shortcut(binding);
+    Ok(desktop_runtime_state(&app))
+}
+
+/// Called once at startup. Reads the persisted toggle-window shortcut from the
+/// desktop preferences store and registers it if set. Nothing is registered
+/// when the key is absent (the default — feature is off).
+pub fn startup_register_toggle_window_shortcut(app: &AppHandle<crate::BrowserEngine>) {
+    let state = app.state::<DesktopSettingsState>();
+
+    let binding = app
+        .store(DESKTOP_SETTINGS_PATH)
+        .ok()
+        .and_then(|store| store.get(TOGGLE_WINDOW_SHORTCUT_KEY))
+        .and_then(|value| value.as_str().map(str::to_string));
+
+    state.set_toggle_window_shortcut(binding.clone());
+
+    if let Some(ref web) = binding {
+        if let Err(error) = crate::desktop::menu::apply_toggle_window_shortcut(app, Some(web)) {
+            log::warn!("Failed to register persisted toggle-window shortcut: {error}");
+        }
+    }
 }
 
 #[tauri::command]
@@ -423,12 +482,18 @@ mod tests {
         desktop_settings_from_values, tray_available_for_session, DesktopSettings,
     };
 
-    const TRAY_UP: DesktopRuntimeState = DesktopRuntimeState {
-        tray_available: true,
-    };
-    const NO_TRAY: DesktopRuntimeState = DesktopRuntimeState {
-        tray_available: false,
-    };
+    fn tray_up() -> DesktopRuntimeState {
+        DesktopRuntimeState {
+            tray_available: true,
+            toggle_window_shortcut: None,
+        }
+    }
+    fn no_tray() -> DesktopRuntimeState {
+        DesktopRuntimeState {
+            tray_available: false,
+            toggle_window_shortcut: None,
+        }
+    }
 
     #[test]
     fn close_behavior_keeps_sable_running() {
@@ -442,7 +507,7 @@ mod tests {
         };
 
         assert_eq!(
-            exit_request_action(settings, TRAY_UP, None),
+            exit_request_action(settings, tray_up(), None),
             ExitRequestAction::CloseWindowsToBackground
         );
     }
@@ -459,7 +524,7 @@ mod tests {
         };
 
         assert_eq!(
-            exit_request_action(settings, TRAY_UP, None),
+            exit_request_action(settings, tray_up(), None),
             ExitRequestAction::AllowExit
         );
     }
@@ -477,7 +542,7 @@ mod tests {
 
         assert!(!tray_available_for_session(&settings, false));
         assert_eq!(
-            exit_request_action(settings, NO_TRAY, None),
+            exit_request_action(settings, no_tray(), None),
             if cfg!(target_os = "macos") {
                 ExitRequestAction::CloseWindowsToBackground
             } else {
@@ -489,10 +554,10 @@ mod tests {
     #[test]
     fn macos_closes_to_background_without_a_tray() {
         assert_eq!(
-            can_restore_from_background(NO_TRAY),
+            can_restore_from_background(no_tray()),
             cfg!(target_os = "macos")
         );
-        assert!(can_restore_from_background(TRAY_UP));
+        assert!(can_restore_from_background(tray_up()));
     }
 
     #[test]
@@ -507,7 +572,7 @@ mod tests {
         };
 
         assert_eq!(
-            exit_request_action(settings, TRAY_UP, Some(0)),
+            exit_request_action(settings, tray_up(), Some(0)),
             ExitRequestAction::AllowExit
         );
     }

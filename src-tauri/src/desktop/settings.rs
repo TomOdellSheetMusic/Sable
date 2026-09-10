@@ -22,6 +22,7 @@ pub(crate) const USE_CUSTOM_TITLE_BAR_KEY: &str = "useCustomTitleBar";
 pub(crate) const SPELLCHECK_KEY: &str = "spellcheck";
 pub(crate) const MIC_HOTKEY_KEY: &str = "micHotkey";
 pub(crate) const DEAFEN_HOTKEY_KEY: &str = "deafenHotkey";
+pub(crate) const TOGGLE_WINDOW_SHORTCUT_KEY: &str = "toggleWindowShortcut";
 pub(crate) const LEGACY_KEEP_BACKGROUND_RUNNING_KEY: &str = "keepBackgroundRunning";
 
 pub(crate) const fn use_custom_title_bar_default() -> bool {

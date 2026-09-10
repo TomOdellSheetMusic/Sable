@@ -17,7 +17,6 @@ import { AsyncStatus, useAsyncCallback } from '$hooks/useAsyncCallback';
 import { ContainerColor } from '$styles/ContainerColor.css';
 import { ModalOverlay } from '$components/modal-overlay/ModalOverlay';
 import { useMatrixClient } from '$hooks/useMatrixClient';
-import type { CryptoBackend } from '$types/matrix-sdk';
 import { Button } from '$components/button';
 
 const DialogHeaderStyles: CSSProperties = {
@@ -94,8 +93,6 @@ function VerificationWaitStart() {
     </Box>
   );
 }
-
-const PENDING_REQUEST_POLL_MS = 2000;
 
 type VerificationStartProps = {
   onStart: () => Promise<void>;
@@ -329,20 +326,18 @@ export function ReceiveSelfDeviceVerification() {
   );
 
   useEffect(() => {
-    if (request) return undefined;
-    const crypto = mx.getCrypto() as CryptoBackend | undefined;
+    if (!mx.clientRunning) return undefined;
+    const crypto = mx.getCrypto();
     if (!crypto?.getVerificationRequestsToDeviceInProgress) return undefined;
 
-    const adopt = () => {
-      const pending = crypto
-        .getVerificationRequestsToDeviceInProgress(mx.getSafeUserId())
-        .find((candidate) => candidate.isSelfVerification && !candidate.initiatedByMe);
-      if (pending) setRequest(pending);
-    };
-    adopt();
-    const timer = setInterval(adopt, PENDING_REQUEST_POLL_MS);
-    return () => clearInterval(timer);
-  }, [mx, request]);
+    const pending = crypto
+      .getVerificationRequestsToDeviceInProgress(mx.getSafeUserId())
+      .find(
+        (candidate) => candidate.isSelfVerification && !candidate.initiatedByMe && candidate.pending
+      );
+    if (pending) setRequest(pending);
+    return undefined;
+  }, [mx]);
 
   const handleExit = useCallback(() => {
     setRequest(undefined);

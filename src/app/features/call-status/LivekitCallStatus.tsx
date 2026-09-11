@@ -38,7 +38,18 @@ function LivekitCallControl({
             enabled={isScreenShareEnabled}
             onToggle={() =>
               void localParticipant.setScreenShareEnabled(!isScreenShareEnabled, {
-                audio: true,
+                // Capture the shared screen's/system audio, but exclude the
+                // app's own audio output (e.g. other participants' voices) so
+                // a viewer never hears themselves echoed back through the
+                // stream. Screen-share audio carries no filtering, matching the
+                // capture settings used elsewhere.
+                audio: {
+                  autoGainControl: false,
+                  noiseSuppression: false,
+                  echoCancellation: false,
+                  voiceIsolation: false,
+                  restrictOwnAudio: true,
+                },
                 selfBrowserSurface: 'exclude',
               })
             }

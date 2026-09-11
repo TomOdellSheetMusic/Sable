@@ -390,6 +390,7 @@ export function RoomNavItem({
             room,
             new CallControlState(callPref.microphone, callPref.video, callPref.sound)
           );
+          navigateRoom(room.roomId);
         } else {
           navigateRoom(room.roomId);
         }

@@ -73,7 +73,7 @@ const isReleaseTag = (() => {
 
 const baseProductName = typeof appConfig.productName === 'string' ? appConfig.productName : 'Sable';
 
-const callEmbeddedDir = 'node_modules/@sableclient/sable-call-embedded/dist';
+const callEmbeddedDir = 'node_modules/@tomodellsheetmusic/sable-call-embedded/dist';
 
 const copyFiles = {
   targets: [

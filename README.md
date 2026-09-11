@@ -45,24 +45,24 @@ Android APKs are published to every release, and [Obtainium](https://obtainium.i
 
 ### Stable
 
-<a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/SableClient/Sable"><img alt="Add to Obtainium" src="https://img.shields.io/badge/Add_to_Obtainium-6750A3?style=for-the-badge"></a>
+<a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/TomOdellSheetMusic/Sable"><img alt="Add to Obtainium" src="https://img.shields.io/badge/Add_to_Obtainium-6750A3?style=for-the-badge"></a>
 &nbsp;
-<a href="https://github.com/SableClient/Sable/releases/latest/download/obtainium.json"><img alt="App config" src="https://img.shields.io/badge/App_config-6B7280?style=for-the-badge"></a>
+<a href="https://github.com/TomOdellSheetMusic/Sable/releases/latest/download/obtainium.json"><img alt="App config" src="https://img.shields.io/badge/App_config-6B7280?style=for-the-badge"></a>
 &nbsp;
-<a href="https://github.com/SableClient/Sable/releases/latest"><img alt="Download APK" src="https://img.shields.io/badge/Download_APK-3DDC84?style=for-the-badge&logo=android"></a>
+<a href="https://github.com/TomOdellSheetMusic/Sable/releases/latest"><img alt="Download APK" src="https://img.shields.io/badge/Download_APK-3DDC84?style=for-the-badge&logo=android"></a>
 
 ### Nightly
 
-<a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22moe.sable.client.nightly%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FSableClient%2FSable%22%2C%22author%22%3A%22SableClient%22%2C%22name%22%3A%22Sable%20Nightly%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22about%5C%22%3A%5C%22An%20almost%20stable%20Matrix%20client%5C%22%2C%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22useLatestAssetDateAsReleaseDate%5C%22%3Atrue%2C%5C%22releaseDateAsVersion%5C%22%3Atrue%2C%5C%22versionDetection%5C%22%3Afalse%7D%22%2C%22overrideSource%22%3A%22GitHub%22%7D"><img alt="Add to Obtainium" src="https://img.shields.io/badge/Add_to_Obtainium-6750A3?style=for-the-badge"></a>
+<a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22moe.sable.client.nightly%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FTomOdellSheetMusic%2FSable%22%2C%22author%22%3A%22TomOdellSheetMusic%22%2C%22name%22%3A%22Sable%20Nightly%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22about%5C%22%3A%5C%22An%20almost%20stable%20Matrix%20client%5C%22%2C%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22useLatestAssetDateAsReleaseDate%5C%22%3Atrue%2C%5C%22releaseDateAsVersion%5C%22%3Atrue%2C%5C%22versionDetection%5C%22%3Afalse%7D%22%2C%22overrideSource%22%3A%22GitHub%22%7D"><img alt="Add to Obtainium" src="https://img.shields.io/badge/Add_to_Obtainium-6750A3?style=for-the-badge"></a>
 &nbsp;
-<a href="https://github.com/SableClient/Sable/releases/download/nightly/obtainium.json"><img alt="App config" src="https://img.shields.io/badge/App_config-6B7280?style=for-the-badge"></a>
+<a href="https://github.com/TomOdellSheetMusic/Sable/releases/download/nightly/obtainium.json"><img alt="App config" src="https://img.shields.io/badge/App_config-6B7280?style=for-the-badge"></a>
 &nbsp;
-<a href="https://github.com/SableClient/Sable/releases/tag/nightly"><img alt="Download APK" src="https://img.shields.io/badge/Download_APK-3DDC84?style=for-the-badge&logo=android"></a>
+<a href="https://github.com/TomOdellSheetMusic/Sable/releases/tag/nightly"><img alt="Download APK" src="https://img.shields.io/badge/Download_APK-3DDC84?style=for-the-badge&logo=android"></a>
 
 ### Setup & install
 
 1. Install [Obtainium](https://github.com/ImranR98/Obtainium/releases/latest).
-2. Tap **Add to Obtainium** above. Stable opens the **Add App** page prefilled with `https://github.com/SableClient/Sable`; nightly opens an import prompt, since it carries the prerelease and version-tracking settings the rolling `nightly` tag needs.
+2. Tap **Add to Obtainium** above. Stable opens the **Add App** page prefilled with `https://github.com/TomOdellSheetMusic/Sable`; nightly opens an import prompt, since it carries the prerelease and version-tracking settings the rolling `nightly` tag needs.
 3. Or download the `obtainium.json` for either channel and import it with **Import/Export → Import from file**.
 
 Android builds are produced by the `android` job in [`tauri-build.yml`](.github/workflows/tauri-build.yml), and the config by the `obtainium` job in the same workflow.

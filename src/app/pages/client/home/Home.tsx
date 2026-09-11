@@ -21,6 +21,7 @@ import {
   getExploreServerPath,
   getCreateRoomPath,
   getHomeForumPath,
+  getHomePath,
   getHomeRoomPath,
   getHomeSearchPath,
   withSearchParam,
@@ -28,8 +29,12 @@ import {
 import { CustomRoomType } from '$types/matrix/room';
 import { useOpenShallowRoute } from '$pages/client/useShallowRoute';
 import { getCanonicalAliasOrRoomId } from '$utils/matrix';
-import { useSelectedOrLastRoom } from '$hooks/router/useSelectedRoom';
-import { useHomeCreateSelected, useHomeSearchSelected } from '$hooks/router/useRouteSelected';
+import { useSelectedOrLastRoom, useSelectedRoom } from '$hooks/router/useSelectedRoom';
+import {
+  useHomeCreateSelected,
+  useHomeSearchSelected,
+  useHomeSelected,
+} from '$hooks/router/useRouteSelected';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { VirtualTile } from '$components/virtualizer';
 import { RoomNavCategoryButton, RoomNavItem } from '$features/room-nav';
@@ -39,6 +44,7 @@ import { useCategoryHandler } from '$hooks/useCategoryHandler';
 import { useNavToActivePathMapper } from '$hooks/useNavToActivePathMapper';
 import { PageNavHeaderWithMenu, PageNavContent } from '$components/page';
 import { PageNavShell } from '$components/page/PageNavShell';
+import { useOpenMobileDrawerContent } from '$components/page/MobileNavDrawerContext';
 import { useClosedNavCategoriesAtom } from '$state/hooks/closedNavCategories';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom, ShowRoomIcon } from '$state/settings';
@@ -177,6 +183,14 @@ export function Home() {
     hideText,
     oldSidebar,
   } = useSidebarWidth();
+  const openMobileDrawerContent = useOpenMobileDrawerContent();
+  const openHome = () => {
+    if (isMobile && openMobileDrawerContent) {
+      openMobileDrawerContent(getHomePath());
+      return;
+    }
+    navigate(getHomePath());
+  };
 
   const [showRoomIconGeneral] = useSetting(settingsAtom, 'showRoomIcon');
   const [showRoomIconArray] = useSetting(settingsAtom, 'perRoomShowRoomIcon');
@@ -191,7 +205,9 @@ export function Home() {
   const [joinCallOnSingleClick] = useSetting(settingsAtom, 'joinCallOnSingleClick');
 
   const selectedRoomId = useSelectedOrLastRoom();
+  const activeRoomId = useSelectedRoom();
   const createRoomSelected = useHomeCreateSelected();
+  const homeSelected = useHomeSelected();
   const openShallowRoute = useOpenShallowRoute();
   const searchSelected = useHomeSearchSelected();
   const noRoomToDisplay = rooms.length === 0;
@@ -267,6 +283,28 @@ export function Home() {
         <PageNavContent scrollRef={scrollRef}>
           <Box direction="Column" gap="300">
             <NavCategory>
+              <NavItem variant="Background" radii="400" aria-selected={homeSelected}>
+                <NavButton onClick={openHome}>
+                  <NavItemContent>
+                    <Box as="span" grow="Yes" alignItems="Center" justifyContent="Start" gap="200">
+                      <Avatar
+                        size={hideText ? undefined : '200'}
+                        radii="400"
+                        style={hideText ? { width: '100%', padding: '0' } : undefined}
+                      >
+                        {menuIcon(House)}
+                      </Avatar>
+                      {!hideText && (
+                        <Box as="span" grow="Yes">
+                          <Text as="span" size="Inherit" truncate>
+                            Home
+                          </Text>
+                        </Box>
+                      )}
+                    </Box>
+                  </NavItemContent>
+                </NavButton>
+              </NavItem>
               <NavItem variant="Background" radii="400" aria-selected={createRoomSelected}>
                 <NavButton onClick={() => openShallowRoute(getCreateRoomPath())}>
                   <NavItemContent>
@@ -410,7 +448,7 @@ export function Home() {
                   if (!roomId) return null;
                   const room = mx.getRoom(roomId);
                   if (!room) return null;
-                  const selected = selectedRoomId === roomId;
+                  const selected = activeRoomId === roomId;
                   const canonicalName = getCanonicalAliasOrRoomId(mx, roomId);
 
                   return (

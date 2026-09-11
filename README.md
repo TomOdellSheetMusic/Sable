@@ -1,3 +1,6 @@
+# My special fork of Sable
+Forked this and now also deploy my own creature comfort patches (windows only) that are not needed by the Sable community but me and my friends really wanted. Every feature I added to Sable should be on a not deleted feature branch, so if the occasion arises, it should be straight forward to pull them in. 
+
 # Sable
 
 A Matrix client built to enhance the user experience with quality-of-life features, cosmetics, utilities, and sheer usability. See the [changelog](https://github.com/SableClient/Sable/blob/dev/CHANGELOG.md).
@@ -9,13 +12,13 @@ Join our matrix space [here](https://matrix.to/#/#sable:sable.moe) to discuss fe
 Forked from [Cinny](https://github.com/cinnyapp/cinny/).
 
 ## Getting started
-The stable web app is available at [app.sable.moe](https://app.sable.moe/) and tracks the [latest GitHub release](https://github.com/SableClient/Sable/releases/latest). Nightly builds are available at [dev.sable.moe](https://dev.sable.moe/) and from the [`nightly` GitHub release](https://github.com/SableClient/Sable/releases/tag/nightly).
+The stable web app is available at [app.sable.moe](https://app.sable.moe/) and tracks the [latest GitHub release](https://github.com/TomOdellSheetMusic/Sable/releases/latest). Nightly builds are available at [dev.sable.moe](https://dev.sable.moe/) and from the [`nightly` GitHub release](https://github.com/TomOdellSheetMusic/Sable/releases/tag/nightly).
 
-You can also download our desktop app for Windows and Linux from [releases](https://github.com/SableClient/Sable/releases/latest). Release artifacts include build attestations. AppImage and Windows installations update automatically; `.deb`, `.rpm`, and AUR installations update through their package manager.
+You can also download our desktop app for Windows and Linux from [releases](https://github.com/TomOdellSheetMusic/Sable/releases/latest). Release artifacts include build attestations. AppImage and Windows installations update automatically; `.deb`, `.rpm`, and AUR installations update through their package manager.
 
 ### Desktop (Linux / macOS / Windows)
 
-<a href="https://github.com/SableClient/Sable/releases/latest"><img alt="Download" src="https://img.shields.io/badge/Download-181717?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/TomOdellSheetMusic/Sable/releases/latest"><img alt="Download" src="https://img.shields.io/badge/Download-181717?style=for-the-badge&logo=github"></a>
 &nbsp;
 <a href="https://flathub.org/apps/moe.sable.client"><img alt="Flathub" src="https://img.shields.io/badge/Install_via_Flathub-4A86CF?style=for-the-badge&logo=flathub"></a>
 
@@ -42,24 +45,24 @@ Android APKs are published to every release, and [Obtainium](https://obtainium.i
 
 ### Stable
 
-<a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/SableClient/Sable"><img alt="Add to Obtainium" src="https://img.shields.io/badge/Add_to_Obtainium-6750A3?style=for-the-badge"></a>
+<a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/TomOdellSheetMusic/Sable"><img alt="Add to Obtainium" src="https://img.shields.io/badge/Add_to_Obtainium-6750A3?style=for-the-badge"></a>
 &nbsp;
-<a href="https://github.com/SableClient/Sable/releases/latest/download/obtainium.json"><img alt="App config" src="https://img.shields.io/badge/App_config-6B7280?style=for-the-badge"></a>
+<a href="https://github.com/TomOdellSheetMusic/Sable/releases/latest/download/obtainium.json"><img alt="App config" src="https://img.shields.io/badge/App_config-6B7280?style=for-the-badge"></a>
 &nbsp;
-<a href="https://github.com/SableClient/Sable/releases/latest"><img alt="Download APK" src="https://img.shields.io/badge/Download_APK-3DDC84?style=for-the-badge&logo=android"></a>
+<a href="https://github.com/TomOdellSheetMusic/Sable/releases/latest"><img alt="Download APK" src="https://img.shields.io/badge/Download_APK-3DDC84?style=for-the-badge&logo=android"></a>
 
 ### Nightly
 
-<a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22moe.sable.client.nightly%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FSableClient%2FSable%22%2C%22author%22%3A%22SableClient%22%2C%22name%22%3A%22Sable%20Nightly%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22about%5C%22%3A%5C%22An%20almost%20stable%20Matrix%20client%5C%22%2C%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22useLatestAssetDateAsReleaseDate%5C%22%3Atrue%2C%5C%22releaseDateAsVersion%5C%22%3Atrue%2C%5C%22versionDetection%5C%22%3Afalse%7D%22%2C%22overrideSource%22%3A%22GitHub%22%7D"><img alt="Add to Obtainium" src="https://img.shields.io/badge/Add_to_Obtainium-6750A3?style=for-the-badge"></a>
+<a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22moe.sable.client.nightly%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FTomOdellSheetMusic%2FSable%22%2C%22author%22%3A%22TomOdellSheetMusic%22%2C%22name%22%3A%22Sable%20Nightly%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22about%5C%22%3A%5C%22An%20almost%20stable%20Matrix%20client%5C%22%2C%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22useLatestAssetDateAsReleaseDate%5C%22%3Atrue%2C%5C%22releaseDateAsVersion%5C%22%3Atrue%2C%5C%22versionDetection%5C%22%3Afalse%7D%22%2C%22overrideSource%22%3A%22GitHub%22%7D"><img alt="Add to Obtainium" src="https://img.shields.io/badge/Add_to_Obtainium-6750A3?style=for-the-badge"></a>
 &nbsp;
-<a href="https://github.com/SableClient/Sable/releases/download/nightly/obtainium.json"><img alt="App config" src="https://img.shields.io/badge/App_config-6B7280?style=for-the-badge"></a>
+<a href="https://github.com/TomOdellSheetMusic/Sable/releases/download/nightly/obtainium.json"><img alt="App config" src="https://img.shields.io/badge/App_config-6B7280?style=for-the-badge"></a>
 &nbsp;
-<a href="https://github.com/SableClient/Sable/releases/tag/nightly"><img alt="Download APK" src="https://img.shields.io/badge/Download_APK-3DDC84?style=for-the-badge&logo=android"></a>
+<a href="https://github.com/TomOdellSheetMusic/Sable/releases/tag/nightly"><img alt="Download APK" src="https://img.shields.io/badge/Download_APK-3DDC84?style=for-the-badge&logo=android"></a>
 
 ### Setup & install
 
 1. Install [Obtainium](https://github.com/ImranR98/Obtainium/releases/latest).
-2. Tap **Add to Obtainium** above. Stable opens the **Add App** page prefilled with `https://github.com/SableClient/Sable`; nightly opens an import prompt, since it carries the prerelease and version-tracking settings the rolling `nightly` tag needs.
+2. Tap **Add to Obtainium** above. Stable opens the **Add App** page prefilled with `https://github.com/TomOdellSheetMusic/Sable`; nightly opens an import prompt, since it carries the prerelease and version-tracking settings the rolling `nightly` tag needs.
 3. Or download the `obtainium.json` for either channel and import it with **Import/Export → Import from file**.
 
 Android builds are produced by the `android` job in [`tauri-build.yml`](.github/workflows/tauri-build.yml), and the config by the `obtainium` job in the same workflow.
@@ -74,32 +77,32 @@ Relevant variable differences between Nightly and Stable:
 
 ## iOS (AltStore / SideStore)
 
-Sable iOS builds are distributed as unsigned IPAs through [AltStore](https://altstore.io) and [SideStore](https://sidestore.io). Each release publishes both the IPA and an `altstore-source.json` manifest — stable builds to the [latest GitHub release](https://github.com/SableClient/Sable/releases/latest), nightly builds to the [`nightly` GitHub release](https://github.com/SableClient/Sable/releases/tag/nightly).
+Sable iOS builds are distributed as unsigned IPAs through [AltStore](https://altstore.io) and [SideStore](https://sidestore.io). Each release publishes both the IPA and an `altstore-source.json` manifest — stable builds to the [latest GitHub release](https://github.com/TomOdellSheetMusic/Sable/releases/latest), nightly builds to the [`nightly` GitHub release](https://github.com/TomOdellSheetMusic/Sable/releases/tag/nightly).
 
 ### Stable Source
 
-<a href="https://intradeus.github.io/http-protocol-redirector?r=altstore://source?url=https://github.com/SableClient/Sable/releases/latest/download/altstore-source.json"><img alt="Add to AltStore" src="https://img.shields.io/badge/Add_to_AltStore-7C3AED?style=for-the-badge"></a>
+<a href="https://intradeus.github.io/http-protocol-redirector?r=altstore://source?url=https://github.com/TomOdellSheetMusic/Sable/releases/latest/download/altstore-source.json"><img alt="Add to AltStore" src="https://img.shields.io/badge/Add_to_AltStore-7C3AED?style=for-the-badge"></a>
 &nbsp;
-<a href="https://intradeus.github.io/http-protocol-redirector?r=sidestore://source?url=https://github.com/SableClient/Sable/releases/latest/download/altstore-source.json"><img alt="Add to SideStore" src="https://img.shields.io/badge/Add_to_SideStore-2563EB?style=for-the-badge"></a>
+<a href="https://intradeus.github.io/http-protocol-redirector?r=sidestore://source?url=https://github.com/TomOdellSheetMusic/Sable/releases/latest/download/altstore-source.json"><img alt="Add to SideStore" src="https://img.shields.io/badge/Add_to_SideStore-2563EB?style=for-the-badge"></a>
 &nbsp;
-<a href="https://github.com/SableClient/Sable/releases/latest/download/altstore-source.json"><img alt="Direct URL" src="https://img.shields.io/badge/Direct_URL-6B7280?style=for-the-badge"></a>
+<a href="https://github.com/TomOdellSheetMusic/Sable/releases/latest/download/altstore-source.json"><img alt="Direct URL" src="https://img.shields.io/badge/Direct_URL-6B7280?style=for-the-badge"></a>
 
 ### Nightly Source
 
-<a href="https://intradeus.github.io/http-protocol-redirector?r=altstore://source?url=https://github.com/SableClient/Sable/releases/download/nightly/altstore-source.json"><img alt="Add to AltStore" src="https://img.shields.io/badge/Add_to_AltStore-7C3AED?style=for-the-badge"></a>
+<a href="https://intradeus.github.io/http-protocol-redirector?r=altstore://source?url=https://github.com/TomOdellSheetMusic/Sable/releases/download/nightly/altstore-source.json"><img alt="Add to AltStore" src="https://img.shields.io/badge/Add_to_AltStore-7C3AED?style=for-the-badge"></a>
 &nbsp;
-<a href="https://intradeus.github.io/http-protocol-redirector?r=sidestore://source?url=https://github.com/SableClient/Sable/releases/download/nightly/altstore-source.json"><img alt="Add to SideStore" src="https://img.shields.io/badge/Add_to_SideStore-2563EB?style=for-the-badge"></a>
+<a href="https://intradeus.github.io/http-protocol-redirector?r=sidestore://source?url=https://github.com/TomOdellSheetMusic/Sable/releases/download/nightly/altstore-source.json"><img alt="Add to SideStore" src="https://img.shields.io/badge/Add_to_SideStore-2563EB?style=for-the-badge"></a>
 &nbsp;
-<a href="https://github.com/SableClient/Sable/releases/download/nightly/altstore-source.json"><img alt="Direct URL" src="https://img.shields.io/badge/Direct_URL-6B7280?style=for-the-badge"></a>
+<a href="https://github.com/TomOdellSheetMusic/Sable/releases/download/nightly/altstore-source.json"><img alt="Direct URL" src="https://img.shields.io/badge/Direct_URL-6B7280?style=for-the-badge"></a>
 
 ### Setup & install
 
 1. Set up [AltStore Classic](https://faq.altstore.io/altstore-classic/altserver) or [SideStore](https://docs.sidestore.io) on your device.
 2. Add the Sable source (tap a button above), or add it manually:
-   - AltStore (stable): `altstore://source?url=https://github.com/SableClient/Sable/releases/latest/download/altstore-source.json`
-   - SideStore (stable): `sidestore://source?url=https://github.com/SableClient/Sable/releases/latest/download/altstore-source.json`
-   - AltStore (nightly): `altstore://source?url=https://github.com/SableClient/Sable/releases/download/nightly/altstore-source.json`
-   - SideStore (nightly): `sidestore://source?url=https://github.com/SableClient/Sable/releases/download/nightly/altstore-source.json`
+   - AltStore (stable): `altstore://source?url=https://github.com/TomOdellSheetMusic/Sable/releases/latest/download/altstore-source.json`
+   - SideStore (stable): `sidestore://source?url=https://github.com/TomOdellSheetMusic/Sable/releases/latest/download/altstore-source.json`
+   - AltStore (nightly): `altstore://source?url=https://github.com/TomOdellSheetMusic/Sable/releases/download/nightly/altstore-source.json`
+   - SideStore (nightly): `sidestore://source?url=https://github.com/TomOdellSheetMusic/Sable/releases/download/nightly/altstore-source.json`
 3. Install Sable from the source. The IPA is unsigned; AltStore/SideStore re-sign it with your personal development certificate at install time, so apps refresh every 7 days (the standard free-account limitation).
 
 iOS builds are produced by the `ios` job in [`tauri-build.yml`](.github/workflows/tauri-build.yml) and track the same `dev`/`v*` triggers as desktop builds.
@@ -112,7 +115,7 @@ You have a few options for self hosting, you can:
 
 ### Docker
 
-Prebuilt images are published to `ghcr.io/sableclient/sable`.
+Prebuilt images are published to `ghcr.io/tomodellsheetmusic/sable`.
 
 - `latest` tracks the current latest version release.
 - `dev` tracks the current `dev` branch image.
@@ -123,7 +126,7 @@ Prebuilt images are published to `ghcr.io/sableclient/sable`.
 Run the latest image with:
 
 ```sh
-docker run --rm -p 8080:8080 ghcr.io/sableclient/sable:latest
+docker run --rm -p 8080:8080 ghcr.io/tomodellsheetmusic/sable:latest
 ```
 
 Then open `http://localhost:8080`.
@@ -134,7 +137,7 @@ file at `/app/config.json`:
 ```yaml
 services:
   sable:
-    image: ghcr.io/sableclient/sable:latest
+    image: ghcr.io/tomodellsheetmusic/sable:latest
     ports:
       - '8080:8080'
     volumes:

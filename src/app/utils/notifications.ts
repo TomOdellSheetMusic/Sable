@@ -25,13 +25,17 @@ const markRoomTimelineAsRead = async (
   const targetId = target?.getId();
   if (!target || !targetId) return false;
 
+  // Clear the local unread counters *before* the read-marker request so the
+  // badge updates the moment the room is read. Waiting on the server
+  // round-trip here made the taskbar/tray badge lag behind the read state.
+  room.setUnreadNotificationCount(NotificationCountType.Total, 0);
+  room.setUnreadNotificationCount(NotificationCountType.Highlight, 0);
+
   if (privateReceipt) {
     await mx.setRoomReadMarkers(room.roomId, targetId, undefined, target);
   } else {
     await mx.setRoomReadMarkers(room.roomId, targetId, target);
   }
-  room.setUnreadNotificationCount(NotificationCountType.Total, 0);
-  room.setUnreadNotificationCount(NotificationCountType.Highlight, 0);
   return true;
 };
 

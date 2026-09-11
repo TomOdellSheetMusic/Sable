@@ -5,7 +5,7 @@ pub mod menu;
 pub mod runtime_state;
 pub mod settings;
 pub mod tray;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 pub mod tray_badge;
 
 #[cfg(windows)]

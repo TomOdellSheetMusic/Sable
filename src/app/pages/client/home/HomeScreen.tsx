@@ -11,11 +11,12 @@ import {
   sizedIcon,
   userFallbackIcon,
 } from '$components/icons/phosphor';
-import { Page, PageContent, PageHeader, PageHero, PageHeroSection } from '$components/page';
+import { Page, PageContent, PageHeader } from '$components/page';
 import { useOpenMobileDrawerNav } from '$components/page/MobileNavDrawerContext';
 import { useRoomNavigate } from '$hooks/useRoomNavigate';
 import { useMatrixClient } from '$hooks/useMatrixClient';
 import { useHomeRooms } from './useHomeRooms';
+import { PublicSpacesCarousel } from './PublicSpacesCarousel';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
 import { factoryRoomIdByActivity } from '$utils/sort';
@@ -344,11 +345,7 @@ export function HomeScreen() {
         <Scroll hideTrack visibility="Hover">
           <PageContent>
             <Box direction="Column" gap="700" style={{ width: '100%' }}>
-              {!compact && (
-                <PageHeroSection>
-                  <PageHero icon="" title="Home" subTitle="Your rooms, all in one place." />
-                </PageHeroSection>
-              )}
+              <PublicSpacesCarousel />
 
               {compact ? (
                 <Box direction="Column" gap="700">

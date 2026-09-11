@@ -14,7 +14,7 @@ import {
 import type { Position, RectCords } from 'folds';
 import type { CSSProperties, FormEventHandler, KeyboardEventHandler } from 'react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { useAtomValue } from 'jotai';
 import type { Opts as LinkifyOpts } from 'linkifyjs';
 import type { HTMLReactParserOptions } from 'html-react-parser';

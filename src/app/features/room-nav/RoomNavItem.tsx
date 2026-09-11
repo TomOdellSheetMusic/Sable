@@ -362,6 +362,8 @@ export function RoomNavItem({
     undefined;
 
   const isActiveCall = callEmbed?.roomId === room.roomId;
+  const speakers = useCallSpeakers(isActiveCall ? callEmbed : undefined);
+  const isDmPartnerSpeaking = !!dmUserId && speakers.has(dmUserId);
 
   const menu = useMenuAnchor<HTMLElement>();
 

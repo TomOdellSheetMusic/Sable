@@ -1,4 +1,5 @@
 import type { MouseEventHandler, MouseEvent } from 'react';
+import classNames from 'classnames';
 import { forwardRef, startTransition, useState, useEffect } from 'react';
 import type { Room } from '$types/matrix-sdk';
 import { RoomEvent as RoomEventEnum } from '$types/matrix-sdk';
@@ -362,6 +363,8 @@ export function RoomNavItem({
     undefined;
 
   const isActiveCall = callEmbed?.roomId === room.roomId;
+  const speakers = useCallSpeakers(isActiveCall ? callEmbed : undefined);
+  const isDmPartnerSpeaking = !!dmUserId && speakers.has(dmUserId);
 
   const menu = useMenuAnchor<HTMLElement>();
 
@@ -531,6 +534,7 @@ export function RoomNavItem({
                       <Avatar
                         size={hideText ? undefined : '200'}
                         radii="400"
+                        className={classNames(isDmPartnerSpeaking && css.SpeakerAvatarRing)}
                         style={hideTextStyling(hideText)}
                       >
                         {showAvatar || (avatarSrc && isStrict) ? (

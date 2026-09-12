@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useAtomValue, useSetAtom } from 'jotai';
 import { Box, Button, Scroll, Text, config } from 'folds';
 import { PageContent, SettingsSectionPage } from '$components/page';
 import { SequenceCard, SequenceCardStyle } from '$components/sequence-card';
 import { SettingTile } from '$components/setting-tile';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
+import { desktopRuntimeStateAtom, pushDesktopRuntimeStateAtom } from '$state/desktopSettings';
 import { useDesktopSetting } from '$state/hooks/desktopSettings';
+import { setToggleWindowShortcut } from '$generated/tauri/commands';
 import { isDesktopTauri } from '$utils/platform';
 import {
   SHORTCUTS,
@@ -14,11 +17,14 @@ import {
   formatShortcut,
   fromAccelerator,
   getShortcutBinding,
+  isDesktopOnlyShortcut,
   toAccelerator,
 } from '../../../keyboard/shortcuts';
-import type { ShortcutDefinition, ShortcutId } from '../../../keyboard/shortcuts';
-
-const CATEGORIES = ['General', 'Navigation', 'Messages'] as const;
+import type {
+  ShortcutDefinition,
+  ShortcutId,
+  ShortcutOverrides,
+} from '../../../keyboard/shortcuts';
 
 function ShortcutKeys({ binding }: { binding: string | null }) {
   const label = formatShortcut(binding);
@@ -97,7 +103,7 @@ function ShortcutRow({
         </Box>
       }
     >
-      {editing && error && (
+      {error && (
         <Text size="T200" priority="500" aria-live="polite">
           {error}
         </Text>
@@ -177,6 +183,18 @@ type KeyboardShortcutsProps = {
 };
 
 export function KeyboardShortcuts({ requestBack, requestClose }: KeyboardShortcutsProps) {
+  const isDesktop = isDesktopTauri();
+  const CATEGORIES = isDesktop
+    ? (['General', 'Navigation', 'Messages', 'Global'] as const)
+    : (['General', 'Navigation', 'Messages'] as const);
+  const [overrides, setOverrides] = useSetting(settingsAtom, 'shortcutOverrides');
+  const [editingId, setEditingId] = useState<ShortcutId>();
+  const [error, setError] = useState<string>();
+  const [errorFor, setErrorFor] = useState<ShortcutId>();
+  const [saving, setSaving] = useState(false);
+  const runtimeState = useAtomValue(desktopRuntimeStateAtom);
+  const toggleBinding = runtimeState.toggleWindowShortcut ?? null;
+  const pushRuntimeState = useSetAtom(pushDesktopRuntimeStateAtom);
   const [micHotkey, setMicHotkey] = useDesktopSetting('micHotkey');
   const [deafenHotkey, setDeafenHotkey] = useDesktopSetting('deafenHotkey');
   const [editingCallHotkey, setEditingCallHotkey] = useState<'mic' | 'deafen' | undefined>();
@@ -211,9 +229,10 @@ export function KeyboardShortcuts({ requestBack, requestClose }: KeyboardShortcu
     return () => window.removeEventListener('keydown', handleCallShortcutCapture, true);
   }, [editingCallHotkey, handleCallShortcutCapture]);
 
-  const [overrides, setOverrides] = useSetting(settingsAtom, 'shortcutOverrides');
-  const [editingId, setEditingId] = useState<ShortcutId>();
-  const [error, setError] = useState<string>();
+  const clearError = useCallback(() => {
+    setError(undefined);
+    setErrorFor(undefined);
+  }, []);
 
   const updateOverride = useCallback(
     (id: ShortcutId, binding: string | null | undefined) => {
@@ -224,9 +243,41 @@ export function KeyboardShortcuts({ requestBack, requestClose }: KeyboardShortcu
         return next;
       });
       setEditingId(undefined);
-      setError(undefined);
+      clearError();
     },
-    [setOverrides]
+    [setOverrides, clearError]
+  );
+
+  const saveBinding = useCallback(
+    async (id: ShortcutId, binding: string | null) => {
+      if (saving) return;
+      if (!isDesktopOnlyShortcut(id)) {
+        updateOverride(id, binding);
+        return;
+      }
+      setSaving(true);
+      try {
+        const nextRuntimeState = await setToggleWindowShortcut({ binding });
+        pushRuntimeState(nextRuntimeState);
+        setEditingId(undefined);
+        clearError();
+      } catch (reason) {
+        setError(
+          typeof reason === 'string' && reason.trim().length > 0
+            ? reason
+            : 'Could not register this shortcut — it may be invalid or already used by another application.'
+        );
+        setErrorFor(id);
+      } finally {
+        setSaving(false);
+      }
+    },
+    [saving, updateOverride, pushRuntimeState, clearError]
+  );
+
+  const effectiveOverrides = useMemo<ShortcutOverrides>(
+    () => ({ ...overrides, 'app.toggleWindow': toggleBinding }),
+    [overrides, toggleBinding]
   );
 
   useEffect(() => {
@@ -238,26 +289,34 @@ export function KeyboardShortcuts({ requestBack, requestClose }: KeyboardShortcu
       event.stopPropagation();
       if (event.key === 'Escape') {
         setEditingId(undefined);
-        setError(undefined);
+        clearError();
         return;
       }
+      if (saving) return;
       if (event.key === 'Backspace' || event.key === 'Delete') {
-        updateOverride(id, null);
+        void saveBinding(id, null);
         return;
       }
       const binding = captureShortcut(event);
       if (!binding) return;
-      const conflict = findShortcutConflict(id, binding, overrides);
+      const conflict = findShortcutConflict(id, binding, effectiveOverrides);
       if (conflict) {
         setError(`Already used by “${conflict.label}” in this context.`);
+        setErrorFor(id);
         return;
       }
-      updateOverride(id, binding);
+      void saveBinding(id, binding);
     };
 
     window.addEventListener('keydown', handleCapture, true);
     return () => window.removeEventListener('keydown', handleCapture, true);
-  }, [editingId, overrides, updateOverride]);
+  }, [editingId, effectiveOverrides, saveBinding, saving, clearError]);
+
+  const bindingFor = (shortcut: ShortcutDefinition): string | null =>
+    shortcut.desktopOnly ? toggleBinding : getShortcutBinding(shortcut.id, overrides);
+
+  const customizedFor = (shortcut: ShortcutDefinition): boolean =>
+    shortcut.desktopOnly ? toggleBinding != null : shortcut.id in overrides;
 
   return (
     <SettingsSectionPage
@@ -272,7 +331,7 @@ export function KeyboardShortcuts({ requestBack, requestClose }: KeyboardShortcu
           <PageContent>
             <Box direction="Column" gap="600">
               <Text size="T300" priority="300">
-                Choose Change, then press a new key combination. Global shortcuts do not run while
+                Choose Change, then press a new key combination. App-wide shortcuts do not run while
                 typing unless the action specifically supports it.
               </Text>
               {CATEGORIES.map((category) => (
@@ -280,6 +339,12 @@ export function KeyboardShortcuts({ requestBack, requestClose }: KeyboardShortcu
                   <Text size="L400" as="h2">
                     {category}
                   </Text>
+                  {category === 'Global' && (
+                    <Text size="T300" priority="300">
+                      Shortcuts in the Global section work system-wide, even when Sable is not
+                      focused.
+                    </Text>
+                  )}
                   <Box direction="Column" gap="100">
                     {SHORTCUTS.filter((shortcut) => shortcut.category === category).map(
                       (shortcut) => (
@@ -291,15 +356,21 @@ export function KeyboardShortcuts({ requestBack, requestClose }: KeyboardShortcu
                         >
                           <ShortcutRow
                             shortcut={shortcut}
-                            binding={getShortcutBinding(shortcut.id, overrides)}
-                            customized={shortcut.id in overrides}
+                            binding={bindingFor(shortcut)}
+                            customized={customizedFor(shortcut)}
                             editing={editingId === shortcut.id}
-                            error={editingId === shortcut.id ? error : undefined}
+                            error={errorFor === shortcut.id ? error : undefined}
                             onEdit={() => {
                               setEditingId(shortcut.id);
-                              setError(undefined);
+                              clearError();
                             }}
-                            onReset={() => updateOverride(shortcut.id, undefined)}
+                            onReset={() => {
+                              if (isDesktopOnlyShortcut(shortcut.id)) {
+                                void saveBinding(shortcut.id, null);
+                                return;
+                              }
+                              updateOverride(shortcut.id, undefined);
+                            }}
                           />
                         </SequenceCard>
                       )
@@ -307,10 +378,13 @@ export function KeyboardShortcuts({ requestBack, requestClose }: KeyboardShortcu
                   </Box>
                 </Box>
               ))}
-              {isDesktopTauri() && (
+              {isDesktop && (
                 <Box direction="Column" gap="100">
                   <Text size="L400" as="h2">
                     Call
+                  </Text>
+                  <Text size="T300" priority="300">
+                    Global shortcuts that work during a call, even when Sable is not focused.
                   </Text>
                   <Box direction="Column" gap="100">
                     <SequenceCard

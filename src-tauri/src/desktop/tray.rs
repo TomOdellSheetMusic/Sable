@@ -6,7 +6,7 @@ use crate::desktop::settings::{
     desktop_settings_from_values, tray_available_for_session, use_custom_title_bar_default,
     DesktopSettings, CLOSE_TO_BACKGROUND_ON_CLOSE_KEY, DEAFEN_HOTKEY_KEY, DESKTOP_SETTINGS_PATH,
     LEGACY_KEEP_BACKGROUND_RUNNING_KEY, MIC_HOTKEY_KEY, SHOW_SYSTEM_TRAY_ICON_KEY, SPELLCHECK_KEY,
-    USE_CUSTOM_TITLE_BAR_KEY,
+    TOGGLE_WINDOW_SHORTCUT_KEY, USE_CUSTOM_TITLE_BAR_KEY,
 };
 use serde_json::json;
 use tauri::{
@@ -30,6 +30,10 @@ pub struct DesktopSettingsState {
     use_custom_title_bar: AtomicBool,
     spellcheck: AtomicBool,
     tray_available: AtomicBool,
+    /// Currently registered toggle-window global shortcut in web hotkey format,
+    /// or `None` when the feature is disabled. Tracked so `desktop_runtime_state`
+    /// can report it without re-reading the store.
+    toggle_window_shortcut: Mutex<Option<String>>,
     /// Currently-registered call hotkeys (`None` means the default is active).
     mic_hotkey: Mutex<Option<String>>,
     deafen_hotkey: Mutex<Option<String>>,
@@ -43,9 +47,36 @@ impl Default for DesktopSettingsState {
             use_custom_title_bar: AtomicBool::new(use_custom_title_bar_default()),
             spellcheck: AtomicBool::new(true),
             tray_available: AtomicBool::new(false),
+            toggle_window_shortcut: Mutex::new(None),
             mic_hotkey: Mutex::new(None),
             deafen_hotkey: Mutex::new(None),
         }
+    }
+}
+
+impl DesktopSettingsState {
+    pub(crate) fn toggle_window_shortcut(&self) -> Option<String> {
+        self.toggle_window_shortcut.lock().unwrap().clone()
+    }
+
+    pub(crate) fn set_toggle_window_shortcut(&self, binding: Option<String>) {
+        *self.toggle_window_shortcut.lock().unwrap() = binding;
+    }
+
+    pub(crate) fn mic_hotkey(&self) -> Option<String> {
+        self.mic_hotkey.lock().unwrap().clone()
+    }
+
+    pub(crate) fn set_mic_hotkey(&self, binding: Option<String>) {
+        *self.mic_hotkey.lock().unwrap() = binding;
+    }
+
+    pub(crate) fn deafen_hotkey(&self) -> Option<String> {
+        self.deafen_hotkey.lock().unwrap().clone()
+    }
+
+    pub(crate) fn set_deafen_hotkey(&self, binding: Option<String>) {
+        *self.deafen_hotkey.lock().unwrap() = binding;
     }
 }
 
@@ -59,6 +90,7 @@ pub fn setup_close_to_background(webview_window: &WebviewWindow<crate::BrowserEn
         if state.close_to_background_on_close.load(Ordering::Relaxed)
             && can_restore_from_background(DesktopRuntimeState {
                 tray_available: state.tray_available.load(Ordering::Relaxed),
+                toggle_window_shortcut: state.toggle_window_shortcut(),
             })
         {
             api.prevent_close();
@@ -137,30 +169,71 @@ pub(crate) fn load_desktop_settings(
 
 pub(crate) fn current_desktop_settings(app: &AppHandle<crate::BrowserEngine>) -> DesktopSettings {
     let state = app.state::<DesktopSettingsState>();
-    let mic_hotkey = state.mic_hotkey.lock().unwrap().clone();
-    let deafen_hotkey = state.deafen_hotkey.lock().unwrap().clone();
     DesktopSettings {
         close_to_background_on_close: state.close_to_background_on_close.load(Ordering::Relaxed),
         show_system_tray_icon: state.show_system_tray_icon.load(Ordering::Relaxed),
         use_custom_title_bar: state.use_custom_title_bar.load(Ordering::Relaxed),
         spellcheck: state.spellcheck.load(Ordering::Relaxed),
-        mic_hotkey,
-        deafen_hotkey,
+        mic_hotkey: state.mic_hotkey(),
+        deafen_hotkey: state.deafen_hotkey(),
     }
 }
 
 fn desktop_runtime_state(app: &AppHandle<crate::BrowserEngine>) -> DesktopRuntimeState {
+    let state = app.state::<DesktopSettingsState>();
     DesktopRuntimeState {
-        tray_available: app
-            .state::<DesktopSettingsState>()
-            .tray_available
-            .load(Ordering::Relaxed),
+        tray_available: state.tray_available.load(Ordering::Relaxed),
+        toggle_window_shortcut: state.toggle_window_shortcut(),
     }
 }
 
 #[tauri::command]
 pub fn get_desktop_runtime_state(app: AppHandle<crate::BrowserEngine>) -> DesktopRuntimeState {
     desktop_runtime_state(&app)
+}
+
+/// Set the global toggle-window shortcut. `binding` is in web hotkey format
+/// (`"mod+shift+s"`); `None` disables the feature. Persists to the desktop
+/// preferences store, registers (or unregisters) the OS accelerator, and
+/// returns the refreshed runtime state.
+#[tauri::command]
+pub fn set_toggle_window_shortcut(
+    app: AppHandle<crate::BrowserEngine>,
+    binding: Option<String>,
+) -> Result<DesktopRuntimeState, String> {
+    let state = app.state::<DesktopSettingsState>();
+
+    crate::desktop::menu::apply_toggle_window_shortcut(&app, binding.as_deref())?;
+
+    // Persist after a successful (un)registration so the store never claims a
+    // binding the OS rejected.
+    app.store(DESKTOP_SETTINGS_PATH)
+        .map_err(|error| error.to_string())?
+        .set(TOGGLE_WINDOW_SHORTCUT_KEY, json!(binding));
+
+    state.set_toggle_window_shortcut(binding);
+    Ok(desktop_runtime_state(&app))
+}
+
+/// Called once at startup. Reads the persisted toggle-window shortcut from the
+/// desktop preferences store and registers it if set. Nothing is registered
+/// when the key is absent (the default — feature is off).
+pub fn startup_register_toggle_window_shortcut(app: &AppHandle<crate::BrowserEngine>) {
+    let state = app.state::<DesktopSettingsState>();
+
+    let binding = app
+        .store(DESKTOP_SETTINGS_PATH)
+        .ok()
+        .and_then(|store| store.get(TOGGLE_WINDOW_SHORTCUT_KEY))
+        .and_then(|value| value.as_str().map(str::to_string));
+
+    state.set_toggle_window_shortcut(binding.clone());
+
+    if let Some(ref web) = binding {
+        if let Err(error) = crate::desktop::menu::apply_toggle_window_shortcut(app, Some(web)) {
+            log::warn!("Failed to register persisted toggle-window shortcut: {error}");
+        }
+    }
 }
 
 #[tauri::command]
@@ -197,23 +270,14 @@ fn apply_desktop_settings(
         .spellcheck
         .store(settings.spellcheck, Ordering::Relaxed);
 
-    let prev_mic = state.mic_hotkey.lock().unwrap().clone();
-    let prev_deafen = state.deafen_hotkey.lock().unwrap().clone();
-
-    let hotkeys_changed = prev_mic != settings.mic_hotkey || prev_deafen != settings.deafen_hotkey;
-    *state.mic_hotkey.lock().unwrap() = settings.mic_hotkey.clone();
-    *state.deafen_hotkey.lock().unwrap() = settings.deafen_hotkey.clone();
+    state.set_mic_hotkey(settings.mic_hotkey.clone());
+    state.set_deafen_hotkey(settings.deafen_hotkey.clone());
 
     apply_main_window_title_bar_settings(app, &settings)?;
 
-    if hotkeys_changed {
-        let prev_hotkeys = DesktopSettings {
-            mic_hotkey: prev_mic,
-            deafen_hotkey: prev_deafen,
-            ..settings.clone()
-        };
-        crate::desktop::menu::apply_call_shortcuts(app, &prev_hotkeys, &settings);
-    }
+    // Always (re)register the call shortcuts so the defaults are registered on
+    // first load, and custom bindings are applied when they change.
+    crate::desktop::menu::register_call_shortcuts(app, &settings);
 
     if settings.show_system_tray_icon && cfg!(not(target_os = "macos")) {
         if app.tray_by_id(MAIN_TRAY_ID).is_none() {
@@ -423,12 +487,18 @@ mod tests {
         desktop_settings_from_values, tray_available_for_session, DesktopSettings,
     };
 
-    const TRAY_UP: DesktopRuntimeState = DesktopRuntimeState {
-        tray_available: true,
-    };
-    const NO_TRAY: DesktopRuntimeState = DesktopRuntimeState {
-        tray_available: false,
-    };
+    fn tray_up() -> DesktopRuntimeState {
+        DesktopRuntimeState {
+            tray_available: true,
+            toggle_window_shortcut: None,
+        }
+    }
+    fn no_tray() -> DesktopRuntimeState {
+        DesktopRuntimeState {
+            tray_available: false,
+            toggle_window_shortcut: None,
+        }
+    }
 
     #[test]
     fn close_behavior_keeps_sable_running() {
@@ -442,7 +512,7 @@ mod tests {
         };
 
         assert_eq!(
-            exit_request_action(settings, TRAY_UP, None),
+            exit_request_action(settings, tray_up(), None),
             ExitRequestAction::CloseWindowsToBackground
         );
     }
@@ -459,7 +529,7 @@ mod tests {
         };
 
         assert_eq!(
-            exit_request_action(settings, TRAY_UP, None),
+            exit_request_action(settings, tray_up(), None),
             ExitRequestAction::AllowExit
         );
     }
@@ -477,7 +547,7 @@ mod tests {
 
         assert!(!tray_available_for_session(&settings, false));
         assert_eq!(
-            exit_request_action(settings, NO_TRAY, None),
+            exit_request_action(settings, no_tray(), None),
             if cfg!(target_os = "macos") {
                 ExitRequestAction::CloseWindowsToBackground
             } else {
@@ -489,10 +559,10 @@ mod tests {
     #[test]
     fn macos_closes_to_background_without_a_tray() {
         assert_eq!(
-            can_restore_from_background(NO_TRAY),
+            can_restore_from_background(no_tray()),
             cfg!(target_os = "macos")
         );
-        assert!(can_restore_from_background(TRAY_UP));
+        assert!(can_restore_from_background(tray_up()));
     }
 
     #[test]
@@ -507,7 +577,7 @@ mod tests {
         };
 
         assert_eq!(
-            exit_request_action(settings, TRAY_UP, Some(0)),
+            exit_request_action(settings, tray_up(), Some(0)),
             ExitRequestAction::AllowExit
         );
     }

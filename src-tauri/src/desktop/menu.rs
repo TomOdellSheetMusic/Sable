@@ -1,9 +1,19 @@
-#[cfg(target_os = "macos")]
+#[cfg(desktop)]
 use tauri::Emitter;
 use tauri::{AppHandle, Manager};
 
 #[cfg(target_os = "macos")]
 pub const SETTINGS_MENU_ID: &str = "settings";
+
+/// Default global hotkey that toggles the microphone.
+pub const DEFAULT_MIC_ACCELERATOR: &str = "CmdOrCtrl+Shift+M";
+/// Default global hotkey that toggles deafen (mute everything).
+pub const DEFAULT_DEAFEN_ACCELERATOR: &str = "CmdOrCtrl+Shift+D";
+
+/// Emitted to the webview when the global mute-microphone hotkey is pressed.
+pub const TOGGLE_MIC_EVENT: &str = "call-toggle-mic";
+/// Emitted to the webview when the global deafen (mute everything) hotkey is pressed.
+pub const TOGGLE_DEAFEN_EVENT: &str = "call-toggle-deafen";
 
 // Extend the standard menu (Edit submenu for webview copy/paste, Quit, Close)
 // with a Settings item.
@@ -53,12 +63,42 @@ pub fn global_shortcut_plugin() -> tauri::plugin::TauriPlugin<crate::BrowserEngi
     use tauri_plugin_global_shortcut::{Builder, ShortcutState};
 
     Builder::new()
-        .with_handler(|app, _shortcut, event| {
-            if event.state() == ShortcutState::Pressed {
-                toggle_main_window(app);
+        .with_handler(move |app, shortcut, event| {
+            if event.state() != ShortcutState::Pressed {
+                return;
             }
+
+            // The toggle-window shortcut is handled by the configurable
+            // `apply_toggle_window_shortcut` registration. Any other registered
+            // shortcut is a call hotkey (mic/deafen), so match it against the
+            // current settings and emit the corresponding event.
+            let settings = crate::desktop::tray::current_desktop_settings(app);
+            let mic_hotkey = settings
+                .mic_hotkey
+                .as_deref()
+                .unwrap_or(DEFAULT_MIC_ACCELERATOR);
+            let deafen_hotkey = settings
+                .deafen_hotkey
+                .as_deref()
+                .unwrap_or(DEFAULT_DEAFEN_ACCELERATOR);
+
+            let event_name = if Some(*shortcut) == parse_shortcut(mic_hotkey) {
+                TOGGLE_MIC_EVENT
+            } else if Some(*shortcut) == parse_shortcut(deafen_hotkey) {
+                TOGGLE_DEAFEN_EVENT
+            } else {
+                // Fall back to the toggle-window behavior for any other shortcut.
+                toggle_main_window(app);
+                return;
+            };
+
+            let _ = app.emit(event_name, ());
         })
         .build()
+}
+
+fn parse_shortcut(binding: &str) -> Option<tauri_plugin_global_shortcut::Shortcut> {
+    binding.parse().ok()
 }
 
 /// Convert a web hotkey binding (`"mod+shift+s"`) into a Tauri accelerator
@@ -124,6 +164,31 @@ pub fn apply_toggle_window_shortcut(
             .map_err(|error| format!("Failed to register shortcut '{accelerator}': {error}"))?;
     }
     Ok(())
+}
+
+/// Register the global call hotkeys (mic/deafen) alongside the configurable
+/// toggle-window shortcut. `settings` provides the current mic/deafen bindings
+/// in web hotkey format; `None` means the default accelerator is used.
+pub fn register_call_shortcuts(
+    app: &AppHandle<crate::BrowserEngine>,
+    settings: &crate::desktop::settings::DesktopSettings,
+) {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+
+    let mic_hotkey = settings.mic_hotkey.as_deref().unwrap_or(DEFAULT_MIC_ACCELERATOR);
+    let deafen_hotkey = settings
+        .deafen_hotkey
+        .as_deref()
+        .unwrap_or(DEFAULT_DEAFEN_ACCELERATOR);
+
+    for (name, accelerator) in [
+        ("mute microphone", mic_hotkey),
+        ("deafen", deafen_hotkey),
+    ] {
+        if let Err(error) = app.global_shortcut().register(accelerator) {
+            log::warn!("Failed to register global {name} shortcut: {error}");
+        }
+    }
 }
 
 #[cfg(test)]

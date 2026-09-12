@@ -15,6 +15,32 @@ import { listen, type UnlistenFn, type Event } from '@tauri-apps/api/event';
 import * as types from './types';
 
 /**
+ * Listen for 'call-toggle-mic' events
+ * @param handler - Callback function to handle the event
+ * @returns Promise that resolves to an unlisten function
+ */
+export async function onCallToggleMic(
+  handler: (payload: void) => void
+): Promise<UnlistenFn> {
+  return listen<void>('call-toggle-mic', (event) => {
+    handler(event.payload);
+  });
+}
+
+/**
+ * Listen for 'call-toggle-deafen' events
+ * @param handler - Callback function to handle the event
+ * @returns Promise that resolves to an unlisten function
+ */
+export async function onCallToggleDeafen(
+  handler: (payload: void) => void
+): Promise<UnlistenFn> {
+  return listen<void>('call-toggle-deafen', (event) => {
+    handler(event.payload);
+  });
+}
+
+/**
  * Listen for 'open-settings' events
  * @param handler - Callback function to handle the event
  * @returns Promise that resolves to an unlisten function

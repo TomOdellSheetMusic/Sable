@@ -7,6 +7,7 @@ import { SettingTile } from '$components/setting-tile';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
 import { desktopRuntimeStateAtom, pushDesktopRuntimeStateAtom } from '$state/desktopSettings';
+import { useDesktopSetting } from '$state/hooks/desktopSettings';
 import { setToggleWindowShortcut } from '$generated/tauri/commands';
 import { isDesktopTauri } from '$utils/platform';
 import {
@@ -14,8 +15,10 @@ import {
   captureShortcut,
   findShortcutConflict,
   formatShortcut,
+  fromAccelerator,
   getShortcutBinding,
   isDesktopOnlyShortcut,
+  toAccelerator,
 } from '../../../keyboard/shortcuts';
 import type {
   ShortcutDefinition,
@@ -109,6 +112,71 @@ function ShortcutRow({
   );
 }
 
+type CallGlobalShortcutRowProps = {
+  title: string;
+  description: string;
+  binding: string | null;
+  editing: boolean;
+  onEdit: () => void;
+  onCancel: () => void;
+  onReset: () => void;
+};
+
+function CallGlobalShortcutRow({
+  title,
+  description,
+  binding,
+  editing,
+  onEdit,
+  onCancel,
+  onReset,
+}: CallGlobalShortcutRowProps) {
+  return (
+    <SettingTile
+      title={title}
+      focusId={`call-shortcut-${title}`}
+      showSettingLinkAction={false}
+      description={
+        editing ? 'Press a shortcut. Backspace removes it; Escape cancels.' : description
+      }
+      after={
+        <Box alignItems="Center" gap="200" wrap="Wrap">
+          <ShortcutKeys binding={fromAccelerator(binding)} />
+          <Button
+            variant="Secondary"
+            fill="Soft"
+            outlined
+            size="300"
+            radii="300"
+            onClick={editing ? onCancel : onEdit}
+            aria-label={editing ? `Press a new shortcut for ${title}` : `Change ${title}`}
+          >
+            <Text size="B300">{editing ? 'Press keys…' : 'Change'}</Text>
+          </Button>
+          {binding !== null && (
+            <Button
+              variant="Critical"
+              fill="Soft"
+              outlined
+              size="300"
+              radii="300"
+              onClick={onReset}
+            >
+              <Text size="B300">Reset</Text>
+            </Button>
+          )}
+        </Box>
+      }
+    >
+      {editing && (
+        <Text size="T200" priority="500" aria-live="polite">
+          Press a shortcut. Backspace removes it; Escape cancels.
+        </Text>
+      )}
+    </SettingTile>
+  );
+}
+
 type KeyboardShortcutsProps = {
   requestBack?: () => void;
   requestClose: () => void;
@@ -127,6 +195,39 @@ export function KeyboardShortcuts({ requestBack, requestClose }: KeyboardShortcu
   const runtimeState = useAtomValue(desktopRuntimeStateAtom);
   const toggleBinding = runtimeState.toggleWindowShortcut ?? null;
   const pushRuntimeState = useSetAtom(pushDesktopRuntimeStateAtom);
+  const [micHotkey, setMicHotkey] = useDesktopSetting('micHotkey');
+  const [deafenHotkey, setDeafenHotkey] = useDesktopSetting('deafenHotkey');
+  const [editingCallHotkey, setEditingCallHotkey] = useState<'mic' | 'deafen' | undefined>();
+
+  const handleCallShortcutCapture = useCallback(
+    (event: KeyboardEvent) => {
+      if (!editingCallHotkey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === 'Escape') {
+        setEditingCallHotkey(undefined);
+        return;
+      }
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        if (editingCallHotkey === 'mic') setMicHotkey(null);
+        else setDeafenHotkey(null);
+        setEditingCallHotkey(undefined);
+        return;
+      }
+      const captured = captureShortcut(event);
+      if (!captured) return;
+      if (editingCallHotkey === 'mic') setMicHotkey(toAccelerator(captured));
+      else setDeafenHotkey(toAccelerator(captured));
+      setEditingCallHotkey(undefined);
+    },
+    [editingCallHotkey, setMicHotkey, setDeafenHotkey]
+  );
+
+  useEffect(() => {
+    if (!editingCallHotkey) return undefined;
+    window.addEventListener('keydown', handleCallShortcutCapture, true);
+    return () => window.removeEventListener('keydown', handleCallShortcutCapture, true);
+  }, [editingCallHotkey, handleCallShortcutCapture]);
 
   const clearError = useCallback(() => {
     setError(undefined);
@@ -277,6 +378,48 @@ export function KeyboardShortcuts({ requestBack, requestClose }: KeyboardShortcu
                   </Box>
                 </Box>
               ))}
+              {isDesktop && (
+                <Box direction="Column" gap="100">
+                  <Text size="L400" as="h2">
+                    Call
+                  </Text>
+                  <Text size="T300" priority="300">
+                    Global shortcuts that work during a call, even when Sable is not focused.
+                  </Text>
+                  <Box direction="Column" gap="100">
+                    <SequenceCard
+                      className={SequenceCardStyle}
+                      variant="SurfaceVariant"
+                      direction="Column"
+                    >
+                      <CallGlobalShortcutRow
+                        title="Toggle microphone"
+                        description="Mute or unmute the microphone during a call, even when Sable isn't focused."
+                        binding={micHotkey}
+                        editing={editingCallHotkey === 'mic'}
+                        onEdit={() => setEditingCallHotkey('mic')}
+                        onCancel={() => setEditingCallHotkey(undefined)}
+                        onReset={() => setMicHotkey(null)}
+                      />
+                    </SequenceCard>
+                    <SequenceCard
+                      className={SequenceCardStyle}
+                      variant="SurfaceVariant"
+                      direction="Column"
+                    >
+                      <CallGlobalShortcutRow
+                        title="Deafen"
+                        description="Mute everything (output and microphone) during a call, even when Sable isn't focused."
+                        binding={deafenHotkey}
+                        editing={editingCallHotkey === 'deafen'}
+                        onEdit={() => setEditingCallHotkey('deafen')}
+                        onCancel={() => setEditingCallHotkey(undefined)}
+                        onReset={() => setDeafenHotkey(null)}
+                      />
+                    </SequenceCard>
+                  </Box>
+                </Box>
+              )}
             </Box>
           </PageContent>
         </Scroll>

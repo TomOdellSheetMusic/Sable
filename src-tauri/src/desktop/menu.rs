@@ -175,16 +175,16 @@ pub fn register_call_shortcuts(
 ) {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
-    let mic_hotkey = settings.mic_hotkey.as_deref().unwrap_or(DEFAULT_MIC_ACCELERATOR);
+    let mic_hotkey = settings
+        .mic_hotkey
+        .as_deref()
+        .unwrap_or(DEFAULT_MIC_ACCELERATOR);
     let deafen_hotkey = settings
         .deafen_hotkey
         .as_deref()
         .unwrap_or(DEFAULT_DEAFEN_ACCELERATOR);
 
-    for (name, accelerator) in [
-        ("mute microphone", mic_hotkey),
-        ("deafen", deafen_hotkey),
-    ] {
+    for (name, accelerator) in [("mute microphone", mic_hotkey), ("deafen", deafen_hotkey)] {
         if let Err(error) = app.global_shortcut().register(accelerator) {
             log::warn!("Failed to register global {name} shortcut: {error}");
         }

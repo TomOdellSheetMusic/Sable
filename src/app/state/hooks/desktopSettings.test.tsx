@@ -94,6 +94,8 @@ describe('useDesktopSetting', () => {
         showSystemTrayIcon: false,
         useCustomTitleBar: true,
         spellcheck: true,
+        micHotkey: null,
+        deafenHotkey: null,
       },
     });
 
@@ -129,6 +131,8 @@ describe('useDesktopSetting', () => {
         showSystemTrayIcon: true,
         useCustomTitleBar: true,
         spellcheck: true,
+        micHotkey: null,
+        deafenHotkey: null,
       },
     });
 

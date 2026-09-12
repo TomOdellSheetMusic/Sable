@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { type as osType } from '@tauri-apps/plugin-os';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { listen } from '@tauri-apps/api/event';
 import { exit } from '@tauri-apps/plugin-process';
 import { useStore } from 'jotai';
 import { useOpenSettings } from '$features/settings';

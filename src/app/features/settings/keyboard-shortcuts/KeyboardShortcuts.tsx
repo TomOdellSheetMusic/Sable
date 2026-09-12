@@ -7,6 +7,7 @@ import { SettingTile } from '$components/setting-tile';
 import { useSetting } from '$state/hooks/settings';
 import { settingsAtom } from '$state/settings';
 import { desktopRuntimeStateAtom, pushDesktopRuntimeStateAtom } from '$state/desktopSettings';
+import { useDesktopSetting } from '$state/hooks/desktopSettings';
 import { setToggleWindowShortcut } from '$generated/tauri/commands';
 import { isDesktopTauri } from '$utils/platform';
 import {
@@ -17,6 +18,7 @@ import {
   fromAccelerator,
   getShortcutBinding,
   isDesktopOnlyShortcut,
+  toAccelerator,
 } from '../../../keyboard/shortcuts';
 import type {
   ShortcutDefinition,
@@ -193,6 +195,39 @@ export function KeyboardShortcuts({ requestBack, requestClose }: KeyboardShortcu
   const runtimeState = useAtomValue(desktopRuntimeStateAtom);
   const toggleBinding = runtimeState.toggleWindowShortcut ?? null;
   const pushRuntimeState = useSetAtom(pushDesktopRuntimeStateAtom);
+  const [micHotkey, setMicHotkey] = useDesktopSetting('micHotkey');
+  const [deafenHotkey, setDeafenHotkey] = useDesktopSetting('deafenHotkey');
+  const [editingCallHotkey, setEditingCallHotkey] = useState<'mic' | 'deafen' | undefined>();
+
+  const handleCallShortcutCapture = useCallback(
+    (event: KeyboardEvent) => {
+      if (!editingCallHotkey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === 'Escape') {
+        setEditingCallHotkey(undefined);
+        return;
+      }
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        if (editingCallHotkey === 'mic') setMicHotkey(null);
+        else setDeafenHotkey(null);
+        setEditingCallHotkey(undefined);
+        return;
+      }
+      const captured = captureShortcut(event);
+      if (!captured) return;
+      if (editingCallHotkey === 'mic') setMicHotkey(toAccelerator(captured));
+      else setDeafenHotkey(toAccelerator(captured));
+      setEditingCallHotkey(undefined);
+    },
+    [editingCallHotkey, setMicHotkey, setDeafenHotkey]
+  );
+
+  useEffect(() => {
+    if (!editingCallHotkey) return undefined;
+    window.addEventListener('keydown', handleCallShortcutCapture, true);
+    return () => window.removeEventListener('keydown', handleCallShortcutCapture, true);
+  }, [editingCallHotkey, handleCallShortcutCapture]);
 
   const clearError = useCallback(() => {
     setError(undefined);
@@ -343,10 +378,13 @@ export function KeyboardShortcuts({ requestBack, requestClose }: KeyboardShortcu
                   </Box>
                 </Box>
               ))}
-              {isDesktopTauri() && (
+              {isDesktop && (
                 <Box direction="Column" gap="100">
                   <Text size="L400" as="h2">
                     Call
+                  </Text>
+                  <Text size="T300" priority="300">
+                    Global shortcuts that work during a call, even when Sable is not focused.
                   </Text>
                   <Box direction="Column" gap="100">
                     <SequenceCard

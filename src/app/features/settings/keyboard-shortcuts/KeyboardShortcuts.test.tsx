@@ -26,6 +26,26 @@ vi.mock('$utils/platform', async (importOriginal) => ({
   isDesktopTauri: mockIsDesktopTauri,
 }));
 
+vi.mock('@tauri-apps/plugin-store', () => ({
+  LazyStore: class {
+    get: (key: string) => Promise<unknown>;
+
+    set: (key: string, value: unknown) => Promise<unknown>;
+
+    close: () => Promise<unknown>;
+
+    constructor() {
+      this.get = async () => undefined;
+      this.set = async () => undefined;
+      this.close = async () => undefined;
+    }
+  },
+}));
+
+vi.mock('@tauri-apps/api/core', () => ({
+  isTauri: () => true,
+}));
+
 const runtimeState = (toggleWindowShortcut: string | null): DesktopRuntimeState => ({
   trayAvailable: false,
   toggleWindowShortcut,
@@ -90,7 +110,7 @@ describe('KeyboardShortcuts', () => {
       )
     ).toBeInTheDocument();
     const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
-    expect(headings).toEqual(['General', 'Navigation', 'Messages', 'Global']);
+    expect(headings).toEqual(['General', 'Navigation', 'Messages', 'Global', 'Call']);
   });
 
   it('hides the Global section outside the desktop app', () => {
@@ -145,7 +165,7 @@ describe('KeyboardShortcuts', () => {
     await waitFor(() =>
       expect(mockSetToggleWindowShortcut).toHaveBeenCalledWith({ binding: null })
     );
-    expect(await screen.findByText('Unassigned')).toBeInTheDocument();
+    expect((await screen.findAllByText('Unassigned')).length).toBeGreaterThan(0);
   });
 
   it('shows an error when registration fails', async () => {

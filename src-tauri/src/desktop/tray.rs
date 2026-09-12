@@ -4,8 +4,8 @@ use std::sync::Mutex;
 use crate::desktop::runtime_state::DesktopRuntimeState;
 use crate::desktop::settings::{
     desktop_settings_from_values, tray_available_for_session, use_custom_title_bar_default,
-    DesktopSettings, CLOSE_TO_BACKGROUND_ON_CLOSE_KEY, DESKTOP_SETTINGS_PATH,
-    LEGACY_KEEP_BACKGROUND_RUNNING_KEY, SHOW_SYSTEM_TRAY_ICON_KEY, SPELLCHECK_KEY,
+    DesktopSettings, CLOSE_TO_BACKGROUND_ON_CLOSE_KEY, DEAFEN_HOTKEY_KEY, DESKTOP_SETTINGS_PATH,
+    LEGACY_KEEP_BACKGROUND_RUNNING_KEY, MIC_HOTKEY_KEY, SHOW_SYSTEM_TRAY_ICON_KEY, SPELLCHECK_KEY,
     TOGGLE_WINDOW_SHORTCUT_KEY, USE_CUSTOM_TITLE_BAR_KEY,
 };
 use serde_json::json;
@@ -34,6 +34,9 @@ pub struct DesktopSettingsState {
     /// or `None` when the feature is disabled. Tracked so `desktop_runtime_state`
     /// can report it without re-reading the store.
     toggle_window_shortcut: Mutex<Option<String>>,
+    /// Currently-registered call hotkeys (`None` means the default is active).
+    mic_hotkey: Mutex<Option<String>>,
+    deafen_hotkey: Mutex<Option<String>>,
 }
 
 impl Default for DesktopSettingsState {
@@ -45,6 +48,8 @@ impl Default for DesktopSettingsState {
             spellcheck: AtomicBool::new(true),
             tray_available: AtomicBool::new(false),
             toggle_window_shortcut: Mutex::new(None),
+            mic_hotkey: Mutex::new(None),
+            deafen_hotkey: Mutex::new(None),
         }
     }
 }
@@ -56,6 +61,22 @@ impl DesktopSettingsState {
 
     pub(crate) fn set_toggle_window_shortcut(&self, binding: Option<String>) {
         *self.toggle_window_shortcut.lock().unwrap() = binding;
+    }
+
+    pub(crate) fn mic_hotkey(&self) -> Option<String> {
+        self.mic_hotkey.lock().unwrap().clone()
+    }
+
+    pub(crate) fn set_mic_hotkey(&self, binding: Option<String>) {
+        *self.mic_hotkey.lock().unwrap() = binding;
+    }
+
+    pub(crate) fn deafen_hotkey(&self) -> Option<String> {
+        self.deafen_hotkey.lock().unwrap().clone()
+    }
+
+    pub(crate) fn set_deafen_hotkey(&self, binding: Option<String>) {
+        *self.deafen_hotkey.lock().unwrap() = binding;
     }
 }
 
@@ -148,15 +169,13 @@ pub(crate) fn load_desktop_settings(
 
 pub(crate) fn current_desktop_settings(app: &AppHandle<crate::BrowserEngine>) -> DesktopSettings {
     let state = app.state::<DesktopSettingsState>();
-    let mic_hotkey = state.mic_hotkey.lock().unwrap().clone();
-    let deafen_hotkey = state.deafen_hotkey.lock().unwrap().clone();
     DesktopSettings {
         close_to_background_on_close: state.close_to_background_on_close.load(Ordering::Relaxed),
         show_system_tray_icon: state.show_system_tray_icon.load(Ordering::Relaxed),
         use_custom_title_bar: state.use_custom_title_bar.load(Ordering::Relaxed),
         spellcheck: state.spellcheck.load(Ordering::Relaxed),
-        mic_hotkey,
-        deafen_hotkey,
+        mic_hotkey: state.mic_hotkey(),
+        deafen_hotkey: state.deafen_hotkey(),
     }
 }
 
@@ -251,23 +270,14 @@ fn apply_desktop_settings(
         .spellcheck
         .store(settings.spellcheck, Ordering::Relaxed);
 
-    let prev_mic = state.mic_hotkey.lock().unwrap().clone();
-    let prev_deafen = state.deafen_hotkey.lock().unwrap().clone();
-
-    let hotkeys_changed = prev_mic != settings.mic_hotkey || prev_deafen != settings.deafen_hotkey;
-    *state.mic_hotkey.lock().unwrap() = settings.mic_hotkey.clone();
-    *state.deafen_hotkey.lock().unwrap() = settings.deafen_hotkey.clone();
+    state.set_mic_hotkey(settings.mic_hotkey.clone());
+    state.set_deafen_hotkey(settings.deafen_hotkey.clone());
 
     apply_main_window_title_bar_settings(app, &settings)?;
 
-    if hotkeys_changed {
-        let prev_hotkeys = DesktopSettings {
-            mic_hotkey: prev_mic,
-            deafen_hotkey: prev_deafen,
-            ..settings.clone()
-        };
-        crate::desktop::menu::apply_call_shortcuts(app, &prev_hotkeys, &settings);
-    }
+    // Always (re)register the call shortcuts so the defaults are registered on
+    // first load, and custom bindings are applied when they change.
+    crate::desktop::menu::register_call_shortcuts(app, &settings);
 
     if settings.show_system_tray_icon && cfg!(not(target_os = "macos")) {
         if app.tray_by_id(MAIN_TRAY_ID).is_none() {

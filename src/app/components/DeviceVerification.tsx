@@ -363,12 +363,23 @@ export function ReceiveSelfDeviceVerification() {
     const crypto = mx.getCrypto();
     if (!crypto?.getVerificationRequestsToDeviceInProgress) return undefined;
 
-    const pending = crypto
-      .getVerificationRequestsToDeviceInProgress(mx.getSafeUserId())
-      .find(
-        (candidate) => candidate.isSelfVerification && !candidate.initiatedByMe && candidate.pending
-      );
-    if (pending) setRequest(pending);
+    // The OlmMachine can be freed between the clientRunning check and this call.
+    try {
+      const pending = crypto
+        .getVerificationRequestsToDeviceInProgress(mx.getSafeUserId())
+        .find(
+          (candidate) =>
+            candidate.isSelfVerification && !candidate.initiatedByMe && candidate.pending
+        );
+      if (pending) setRequest(pending);
+    } catch (error) {
+      Sentry.addBreadcrumb({
+        category: 'crypto',
+        message: 'Could not read in-progress verification requests',
+        level: 'warning',
+        data: { error: error instanceof Error ? error.message : String(error) },
+      });
+    }
     return undefined;
   }, [mx]);
 

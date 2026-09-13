@@ -475,6 +475,8 @@ function holdsPlaintext(event: MatrixEvent): boolean {
 
 const DECRYPT_RETRY_DELAYS_MS = [1000, 2000, 5000, 10_000, 30_000, 60_000] as const;
 
+const FINAL_DECRYPT_ATTEMPT_TIMEOUT_MS = 10_000;
+
 const supportsEventDecryption = (crypto: CryptoApi | undefined): crypto is CryptoBackend =>
   !!crypto && 'decryptEvent' in crypto && typeof crypto.decryptEvent === 'function';
 
@@ -501,21 +503,41 @@ function whenDecrypted(event: MatrixEvent, apply: () => Promise<void>, mx: Matri
   };
 
   event.on(MatrixEventEvent.Decrypted, onDecrypted);
+  const giveUp = () => {
+    if (finished) return;
+    finish();
+    unifiedPushLog.warn('notification', 'Encrypted preview never decrypted within retry window', {
+      roomId: event.getRoomId(),
+      sessionId: event.getWireContent().session_id,
+      attempts: retryIndex,
+    });
+  };
   const retry = () => {
     if (finished) return;
+    const crypto = mx.getCrypto();
+    const attempt = supportsEventDecryption(crypto)
+      ? event.attemptDecryption(crypto, { isRetry: true }).catch(() => undefined)
+      : undefined;
+
     const remaining = retryDeadline - Date.now();
     if (remaining > 0) {
-      const crypto = mx.getCrypto();
-      if (supportsEventDecryption(crypto)) {
-        void event.attemptDecryption(crypto, { isRetry: true }).catch(() => undefined);
-      }
+      // Sync is what carries the room key, and a backgrounded client only keeps
+      // it running while a push drain is outstanding.
+      getSlidingSyncManager(mx)?.requestPushDrain();
       const delay = DECRYPT_RETRY_DELAYS_MS[retryIndex] ?? 60_000;
       retryTimer = setTimeout(retry, Math.min(delay, remaining));
       retryIndex += 1;
       return;
     }
-    finish();
-    unifiedPushLog.warn('notification', 'Encrypted preview never decrypted within retry window');
+
+    // The window can lapse on a tick that runs long after the key landed, so
+    // settle on this last attempt rather than on the clock.
+    if (!attempt) {
+      giveUp();
+      return;
+    }
+    retryTimer = setTimeout(giveUp, FINAL_DECRYPT_ATTEMPT_TIMEOUT_MS);
+    void attempt.then(giveUp);
   };
   retryTimer = setTimeout(retry, DECRYPT_RETRY_DELAYS_MS[0]);
   retryIndex += 1;

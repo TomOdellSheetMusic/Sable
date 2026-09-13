@@ -53,6 +53,9 @@ const matrixClient = vi.hoisted(() => ({
   fetchRoomEvent: vi.fn<() => Promise<unknown>>(),
 }));
 
+const requestPushDrain = vi.hoisted(() => vi.fn<() => void>());
+const getSlidingSyncManager = vi.hoisted(() => vi.fn<() => unknown>());
+
 const invoke = vi.hoisted(() =>
   vi.fn<(cmd: string, args?: Record<string, unknown>) => Promise<unknown>>()
 );
@@ -77,6 +80,8 @@ const addPluginListener = vi.hoisted(() =>
 );
 
 vi.mock('./UnifiedPushTransport', () => unifiedPushTransport);
+
+vi.mock('$client/initMatrix', () => ({ getSlidingSyncManager }));
 
 vi.mock('./TauriNotificationsApiClient', () => ({
   getTauriNotificationsApi,
@@ -151,6 +156,7 @@ describe('UnifiedPushNotifications', () => {
       }
     });
     matrixClient.getRoom.mockReturnValue(undefined);
+    getSlidingSyncManager.mockReturnValue({ requestPushDrain });
     invoke.mockResolvedValue(undefined);
     addPluginListener.mockImplementation(
       async (_plugin: string, _event: string, handler: (data: unknown) => void) => {
@@ -568,7 +574,8 @@ describe('UnifiedPushNotifications', () => {
       await listenAndPush(encryptedPush('$expired:example.com'));
       await vi.waitFor(() => expect(notificationsApi.sendNotification).toHaveBeenCalledOnce());
 
-      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      // The window, plus the grace for the attempt made as it lapses.
+      await vi.advanceTimersByTimeAsync(5 * 60_000 + 10_000);
       resolveDecryption({
         clearEvent: {
           type: 'm.room.message',
@@ -578,6 +585,61 @@ describe('UnifiedPushNotifications', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(notificationsApi.sendNotification).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('enriches from the decryption attempt made as the retry window lapses', async () => {
+    vi.useFakeTimers();
+    try {
+      matrixClient.getRoom.mockReturnValue(makeRoom());
+      const keyArrivesAt = Date.now() + 5 * 60_000;
+      matrixClient.getCrypto.mockReturnValue({
+        decryptEvent: vi
+          .fn<() => Promise<Record<string, unknown>>>()
+          .mockImplementation(async () => {
+            if (Date.now() < keyArrivesAt) throw new Error('MissingRoomKey');
+            return {
+              clearEvent: { type: 'm.room.message', content: { body: 'key arrived' } },
+            };
+          }),
+      });
+
+      await listenAndPush(encryptedPush('$suspended:example.com'));
+      await vi.waitFor(() => expect(notificationsApi.sendNotification).toHaveBeenCalledOnce());
+
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+      await vi.waitFor(() => expect(notificationsApi.sendNotification).toHaveBeenCalledTimes(2));
+      expect(notificationsApi.sendNotification.mock.calls[1]?.[0]).toMatchObject({
+        body: 'You: key arrived',
+        silent: true,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the to-device drain alive while an encrypted preview is still pending', async () => {
+    vi.useFakeTimers();
+    try {
+      matrixClient.getRoom.mockReturnValue(makeRoom());
+      matrixClient.getCrypto.mockReturnValue({
+        decryptEvent: vi
+          .fn<() => Promise<Record<string, unknown>>>()
+          .mockRejectedValue(new Error('MissingRoomKey')),
+      });
+
+      await listenAndPush(encryptedPush('$pending-drain:example.com'));
+      await vi.waitFor(() => expect(notificationsApi.sendNotification).toHaveBeenCalledOnce());
+      // Only the drain the incoming push itself asked for.
+      expect(requestPushDrain).toHaveBeenCalledOnce();
+
+      // Past the two-minute drain window.
+      await vi.advanceTimersByTimeAsync(3 * 60_000);
+
+      expect(requestPushDrain.mock.calls.length).toBeGreaterThan(1);
     } finally {
       vi.useRealTimers();
     }

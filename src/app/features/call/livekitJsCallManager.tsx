@@ -5,6 +5,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef } fr
 import { useStore } from 'jotai';
 import type { Room } from '$types/matrix-sdk';
 import { wrapWebKitCamera } from './canvasCamera';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { isTauri } from '@tauri-apps/api/core';
 import { isWebKitGtk } from '$utils/platform';
 import {
   livekitJsCallAtom,
@@ -154,7 +156,44 @@ export function LivekitJsCallManagerProvider({ children }: LivekitJsCallManagerP
         hangup: () => controller.disconnect(),
       });
     });
+
+    // When the app is closed without an explicit hangup — Alt+F4 or OS shutdown
+    // on desktop, browser tab close on web — the connections must be torn down
+    // while the JS context is still alive. livekit-client and matrixrtc each
+    // register their own fire-and-forget `pagehide`/`beforeunload` handlers
+    // (SendLeave to the SFU and `leaveRoomSession` respectively), but those are
+    // async and unawaited, so a webview (CEF) destroyed mid-flush can strand a
+    // call participant who then lingers on the roster. Running the full graceful
+    // disconnect here covers both the SFU leave and the MatrixRTC membership
+    // retract through the same path as a manual hangup.
+    const hangupOnClose = () => void controllerRef.current?.disconnect();
+    const handlePageHide = (event: PageTransitionEvent) => {
+      // A persisted page is only frozen (app switch, back/forward cache); the
+      // call is still ours if the page resumes.
+      if (event.persisted) return;
+      hangupOnClose();
+    };
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', hangupOnClose);
+
+    // On desktop the window can be closed (Alt+F4, Ctrl+W, OS shutdown) without
+    // a browser `pagehide`/`beforeunload` ever being dispatched reliably by the
+    // CEF webview, so also hook Tauri's close-requested event.
+    let tauriUnlisten: (() => void) | undefined;
+    const disposeTauriClosePromise = isTauri()
+      ? getCurrentWindow()
+          .onCloseRequested(hangupOnClose)
+          .then((unlisten) => {
+            tauriUnlisten = unlisten;
+          })
+          .catch(() => undefined)
+      : undefined;
+
     return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', hangupOnClose);
+      if (tauriUnlisten) tauriUnlisten();
+      void disposeTauriClosePromise?.catch(() => undefined);
       unsubscribe();
       roomIdRef.current = undefined;
       if (controllerRef.current === controller) controllerRef.current = undefined;

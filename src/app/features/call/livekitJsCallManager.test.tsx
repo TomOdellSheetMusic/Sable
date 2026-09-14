@@ -26,6 +26,20 @@ vi.mock('$hooks/useClientConfig', () => ({
   useClientConfig: () => ({ elementCallUrl: undefined }),
 }));
 
+const { mockIsTauri, mockGetCurrentWindow } = vi.hoisted(() => ({
+  mockIsTauri: vi.fn<() => boolean>(),
+  mockGetCurrentWindow:
+    vi.fn<() => { onCloseRequested: (...args: unknown[]) => Promise<() => void> }>(),
+}));
+
+vi.mock('@tauri-apps/api/core', () => ({
+  isTauri: mockIsTauri,
+}));
+
+vi.mock('@tauri-apps/api/window', () => ({
+  getCurrentWindow: mockGetCurrentWindow,
+}));
+
 const { createControllerMock } = vi.hoisted(() => ({
   createControllerMock: vi.fn<(...args: unknown[]) => unknown>(),
 }));
@@ -154,6 +168,9 @@ const currentManager = (harness: Harness): LivekitJsCallManager => {
 describe('LivekitJsCallManagerProvider', () => {
   beforeEach(() => {
     createControllerMock.mockReset();
+    mockIsTauri.mockReset();
+    mockGetCurrentWindow.mockReset();
+    mockIsTauri.mockReturnValue(false);
   });
 
   it('start then consumer unmount/replacement does not disconnect the controller', () => {
@@ -249,6 +266,86 @@ describe('LivekitJsCallManagerProvider', () => {
     });
     expect(controller.listenerCount()).toBe(0);
     expect(harness.store.get(livekitJsCallAtom)).toBeUndefined();
+  });
+
+  it('disconnects the active call on pagehide so a closed webview does not strand the participant', async () => {
+    const harness = createHarness();
+    const view = render(
+      <harness.wrapper>
+        <harness.Consumer />
+      </harness.wrapper>
+    );
+    const controller = harness.controllers[0]!;
+    act(() => {
+      currentManager(harness).start({ room, video: false });
+    });
+    act(() => {
+      controller.emit({ lifecycle: 'active', room: {} as never });
+    });
+    expect(controller.disconnect).not.toHaveBeenCalled();
+
+    act(() => {
+      window.dispatchEvent(new Event('pagehide'));
+    });
+
+    expect(controller.disconnect).toHaveBeenCalledTimes(1);
+    view.unmount();
+  });
+
+  it('skips the pagehide teardown when the page is persisted (bfcache)', async () => {
+    const harness = createHarness();
+    const view = render(
+      <harness.wrapper>
+        <harness.Consumer />
+      </harness.wrapper>
+    );
+    const controller = harness.controllers[0]!;
+    act(() => {
+      currentManager(harness).start({ room, video: false });
+    });
+    act(() => {
+      controller.emit({ lifecycle: 'active', room: {} as never });
+    });
+
+    const pagehide = new Event('pagehide') as PageTransitionEvent;
+    Object.defineProperty(pagehide, 'persisted', { value: true });
+    act(() => {
+      window.dispatchEvent(pagehide);
+    });
+
+    expect(controller.disconnect).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
+  it('disconnects the active call when Tauri requests a window close (Alt+F4 / Ctrl+W)', async () => {
+    const onCloseRequested = vi.fn<(...args: unknown[]) => Promise<() => void>>(() =>
+      Promise.resolve(() => undefined)
+    );
+    mockIsTauri.mockReturnValue(true);
+    mockGetCurrentWindow.mockReturnValue({ onCloseRequested });
+
+    const harness = createHarness();
+    const view = render(
+      <harness.wrapper>
+        <harness.Consumer />
+      </harness.wrapper>
+    );
+    const controller = harness.controllers[0]!;
+    act(() => {
+      currentManager(harness).start({ room, video: false });
+    });
+    act(() => {
+      controller.emit({ lifecycle: 'active', room: {} as never });
+    });
+    await waitFor(() => expect(onCloseRequested).toHaveBeenCalled());
+
+    const handler = onCloseRequested.mock.calls[0]![0] as () => void;
+    act(() => {
+      handler();
+    });
+
+    expect(controller.disconnect).toHaveBeenCalledTimes(1);
+    view.unmount();
   });
 
   it('multiple consumers share one controller for one call', () => {

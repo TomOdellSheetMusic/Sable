@@ -26,10 +26,13 @@ vi.mock('$hooks/useClientConfig', () => ({
   useClientConfig: () => ({ elementCallUrl: undefined }),
 }));
 
-const { mockIsTauri, mockGetCurrentWindow } = vi.hoisted(() => ({
+const { mockIsTauri, mockGetCurrentWindow, mockListen } = vi.hoisted(() => ({
   mockIsTauri: vi.fn<() => boolean>(),
   mockGetCurrentWindow:
     vi.fn<() => { onCloseRequested: (...args: unknown[]) => Promise<() => void> }>(),
+  mockListen: vi.fn<(...args: unknown[]) => Promise<() => void>>(() =>
+    Promise.resolve(() => undefined)
+  ),
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -38,6 +41,10 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: mockGetCurrentWindow,
+}));
+
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: mockListen,
 }));
 
 const { createControllerMock } = vi.hoisted(() => ({
@@ -170,6 +177,8 @@ describe('LivekitJsCallManagerProvider', () => {
     createControllerMock.mockReset();
     mockIsTauri.mockReset();
     mockGetCurrentWindow.mockReset();
+    mockListen.mockReset();
+    mockListen.mockImplementation(() => Promise.resolve(() => undefined));
     mockIsTauri.mockReturnValue(false);
   });
 
@@ -342,6 +351,39 @@ describe('LivekitJsCallManagerProvider', () => {
     const handler = onCloseRequested.mock.calls[0]![0] as () => void;
     act(() => {
       handler();
+    });
+
+    expect(controller.disconnect).toHaveBeenCalledTimes(1);
+    view.unmount();
+  });
+
+  it('disconnects the active call when the shell emits the flush-before-exit event (tray Quit / Ctrl+Q / OS shutdown)', async () => {
+    mockIsTauri.mockReturnValue(true);
+    mockGetCurrentWindow.mockReturnValue({
+      onCloseRequested: () => Promise.resolve(() => undefined),
+    });
+
+    const harness = createHarness();
+    const view = render(
+      <harness.wrapper>
+        <harness.Consumer />
+      </harness.wrapper>
+    );
+    const controller = harness.controllers[0]!;
+    act(() => {
+      currentManager(harness).start({ room, video: false });
+    });
+    act(() => {
+      controller.emit({ lifecycle: 'active', room: {} as never });
+    });
+    expect(controller.disconnect).not.toHaveBeenCalled();
+
+    await waitFor(() =>
+      expect(mockListen).toHaveBeenCalledWith('flush-calls-before-exit', expect.any(Function))
+    );
+    const flushHandler = mockListen.mock.calls[0]![1] as () => void;
+    act(() => {
+      flushHandler();
     });
 
     expect(controller.disconnect).toHaveBeenCalledTimes(1);

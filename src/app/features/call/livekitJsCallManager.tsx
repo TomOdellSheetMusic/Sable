@@ -7,6 +7,7 @@ import type { Room } from '$types/matrix-sdk';
 import { wrapWebKitCamera } from './canvasCamera';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { isTauri } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { isWebKitGtk } from '$utils/platform';
 import {
   livekitJsCallAtom,
@@ -189,11 +190,27 @@ export function LivekitJsCallManagerProvider({ children }: LivekitJsCallManagerP
           .catch(() => undefined)
       : undefined;
 
+    // Hard-exit paths (tray Quit, Ctrl+Q, OS shutdown) call `app.exit()` or
+    // `process::exit` from the shell, which destroys the webview without firing
+    // `pagehide`/`beforeunload`/`onCloseRequested`. The shell emits this event
+    // just before it tears the process down so the active call is disconnected
+    // and its membership retracted before the JS context dies.
+    let tauriFlushUnlisten: (() => void) | undefined;
+    const disposeTauriFlushPromise = isTauri()
+      ? listen('flush-calls-before-exit', hangupOnClose)
+          .then((unlisten) => {
+            tauriFlushUnlisten = unlisten;
+          })
+          .catch(() => undefined)
+      : undefined;
+
     return () => {
       window.removeEventListener('pagehide', handlePageHide);
       window.removeEventListener('beforeunload', hangupOnClose);
       if (tauriUnlisten) tauriUnlisten();
       void disposeTauriClosePromise?.catch(() => undefined);
+      if (tauriFlushUnlisten) tauriFlushUnlisten();
+      void disposeTauriFlushPromise?.catch(() => undefined);
       unsubscribe();
       roomIdRef.current = undefined;
       if (controllerRef.current === controller) controllerRef.current = undefined;

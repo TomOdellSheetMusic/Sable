@@ -7,6 +7,8 @@ plugins {
     id("rust")
 }
 
+val fossBuild = providers.environmentVariable("SABLE_FOSS").orNull == "1"
+
 val tauriProperties = Properties().apply {
     val propFile = file("tauri.properties")
     if (propFile.exists()) {
@@ -24,6 +26,8 @@ android {
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+        // Not an app flavour: that would change the output paths tauri-build.yml globs.
+        missingDimensionStrategy("push", if (fossBuild) "foss" else "gms")
     }
     signingConfigs {
         create("release") {
@@ -54,6 +58,9 @@ android {
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
+            packaging {
+                jniLibs.useLegacyPackaging = true
+            }
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))
@@ -105,6 +112,8 @@ apply(from = "tauri.build.gradle.kts")
 
 // Native FCM push (Sygnal): applies only once google-services.json is added to this
 // directory, so builds without Firebase configured still succeed.
-if (file("google-services.json").exists()) {
+// Skipped for FOSS builds: the plugin injects the Firebase project ids as string
+// resources even when no Firebase library is linked.
+if (!fossBuild && file("google-services.json").exists()) {
     apply(plugin = "com.google.gms.google-services")
 }

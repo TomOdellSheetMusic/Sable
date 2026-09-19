@@ -244,6 +244,8 @@ jobs:
       ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      # Release tags only: excludes nightly and unparseable tags (empty version).
+      IS_RELEASE: ${{ startsWith(needs.setup-release.outputs.tag, 'v') }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -309,6 +311,27 @@ jobs:
           base64 -d <<< "$ANDROID_KEY_BASE64" > "$RUNNER_TEMP/keystore.jks"
           echo "storeFile=$RUNNER_TEMP/keystore.jks" >> keystore.properties
 
+      # Must run before the Google build: they share one Gradle output directory.
+      - name: Build FOSS Android APKs
+        if: ${{ env.IS_RELEASE == 'true' }}
+        shell: bash
+        env:
+          SABLE_FOSS: '1'
+        run: |
+          # tauri-build validates every file in capabilities/, so the geolocation
+          # permissions must be absent, not just unreferenced.
+          rm src-tauri/capabilities/geolocation.json
+          pnpm tauri android build --apk --split-per-abi --target aarch64 armv7 -- --no-default-features --features wry,matrix-crypto
+          git checkout -- src-tauri/capabilities/geolocation.json
+          mkdir -p android-artifacts
+          for pair in 'arm64:arm64' 'arm:armv7'; do
+            FLAVOR=${pair%%:*}
+            ABI=${pair##*:}
+            APK=$(find "src-tauri/gen/android/app/build/outputs/apk/$FLAVOR/release" -name '*.apk' -type f | head -1)
+            [ -n "$APK" ] || { echo "FOSS $ABI APK not found" >&2; exit 1; }
+            mv "$APK" "android-artifacts/Sable-${VERSION}-android-${ABI}-foss.apk"
+          done
+
       - name: Build Android bundles
         shell: bash
         env:
@@ -335,6 +358,7 @@ jobs:
           subject-path: |
             src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
             src-tauri/gen/android/app/build/outputs/bundle/universalRelease/*.aab
+            ${{ env.IS_RELEASE == 'true' && 'android-artifacts/*.apk' || '' }}
 
       - name: Attach Android bundles to release
         shell: bash
@@ -343,7 +367,8 @@ jobs:
         run: |
           OUT="src-tauri/gen/android/app/build/outputs"
           for f in "$OUT"/apk/universal/release/*.apk \
-                   "$OUT"/bundle/universalRelease/*.aab; do
+                   "$OUT"/bundle/universalRelease/*.aab \
+                   android-artifacts/*.apk; do
             [ -e "$f" ] || continue
             echo "Uploading $f"
             gh release upload "$TAG" "$f" --clobber

@@ -37,6 +37,12 @@ command = "git switch -c release"
 [[workflows.steps]]
 type = "PrepareRelease"
 
+# IzzyOnDroid reads fastlane metadata from the tagged commit, so the changelog
+# has to be written here rather than in tauri-build.yml, which runs after tagging.
+[[workflows.steps]]
+type = "Command"
+command = "node scripts/fastlane-changelog.js $version && git add fastlane/metadata/android/en-US/changelogs"
+
 [[workflows.steps]]
 type = "Command"
 command = "git commit -m \"chore: prepare release $version\""

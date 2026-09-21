@@ -29,6 +29,10 @@ android {
         // Not an app flavour: that would change the output paths tauri-build.yml globs.
         missingDimensionStrategy("push", if (fossBuild) "foss" else "gms")
     }
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
     signingConfigs {
         create("release") {
             val keystorePropertiesFile = rootProject.file("keystore.properties")

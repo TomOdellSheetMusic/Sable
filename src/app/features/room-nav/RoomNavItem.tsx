@@ -570,6 +570,7 @@ export function RoomNavItem({
                       <SidebarUnreadBadge
                         highlight={unread.highlight > 0}
                         count={unread.highlight > 0 ? unread.highlight : unread.total}
+                        estimated={unread.estimated}
                       />
                     )}
 
@@ -609,6 +610,7 @@ export function RoomNavItem({
                               highlight={!!unread && unread.highlight > 0}
                               count={unreadCount}
                               dm={direct}
+                              estimated={unread?.estimated}
                             />
                           </UnreadBadgeCenter>
                         )}

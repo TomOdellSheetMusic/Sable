@@ -1,5 +1,12 @@
 # Sable Client Changelog
 
+## 1.22.5 (2026-09-20)
+
+### Fixes
+
+* Fix a crash on older WebViews that lack `toSorted`, `toReversed`, and `with`. by @eleboucher in #2122
+* Shrink the Android APK: strip the native library, drop bundled source maps, and split the F-Droid build per ABI. by @eleboucher in #2122
+
 ## 1.22.4 (2026-09-18)
 
 ### Fixes

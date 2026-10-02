@@ -21,6 +21,17 @@ use tauri::tray::{MouseButton, TrayIconEvent};
 
 pub(crate) const MAIN_TRAY_ID: &str = "main";
 pub(crate) const WINDOW_HIDDEN_TO_TRAY_EVENT: &str = "window-hidden-to-tray";
+/// Emitted to the webview shortly before the process would hard-exit (tray
+/// Quit, Ctrl+Q, OS shutdown). The frontend uses this to retract any active
+/// call's MatrixRTC membership and disconnect from the LiveKit SFU before the
+/// JS context is torn down, so a user who quits mid-call does not linger as a
+/// ghost participant.
+pub(crate) const FLUSH_CALLS_BEFORE_EXIT_EVENT: &str = "flush-calls-before-exit";
+/// How long the shell waits for the webview to finish flushing calls after
+/// emitting `FLUSH_CALLS_BEFORE_EXIT_EVENT` before it forces the process to
+/// exit. Kept short: the send is fire-and-forget from the client's perspective
+/// and the delayed-leave-event membership retraction is the real guarantee.
+const FLUSH_CALLS_BEFORE_EXIT_TIMEOUT_MS: u64 = 750;
 const TRAY_MENU_SHOW_ID: &str = "tray_show";
 const TRAY_MENU_QUIT_ID: &str = "tray_quit";
 
@@ -37,6 +48,11 @@ pub struct DesktopSettingsState {
     /// Currently-registered call hotkeys (`None` means the default is active).
     mic_hotkey: Mutex<Option<String>>,
     deafen_hotkey: Mutex<Option<String>>,
+    /// Set once the shell has emitted `FLUSH_CALLS_BEFORE_EXIT_EVENT` and is
+    /// waiting for the webview to flush calls before forcing the process to
+    /// exit. Re-entrant `ExitRequested` events while it is pending must not
+    /// trigger another flush round.
+    flush_calls_in_progress: AtomicBool,
 }
 
 impl Default for DesktopSettingsState {
@@ -50,6 +66,7 @@ impl Default for DesktopSettingsState {
             toggle_window_shortcut: Mutex::new(None),
             mic_hotkey: Mutex::new(None),
             deafen_hotkey: Mutex::new(None),
+            flush_calls_in_progress: AtomicBool::new(false),
         }
     }
 }
@@ -334,6 +351,33 @@ fn close_all_windows(app: &AppHandle<crate::BrowserEngine>) {
     }
 }
 
+/// Exit the process, but first ask the webview to retract any active call's
+/// membership and disconnect from the SFU. `app.exit(0)` / `process::exit`
+/// destroy the webview immediately, so without this a user who quits mid-call
+/// (tray Quit, Ctrl+Q, OS shutdown) would linger as a call participant.
+///
+/// The flush is a fire-and-forget send from the client's perspective; the
+/// MatrixRTC delayed-leave-event is what guarantees eventual retraction, so the
+/// wait here is only a best-effort grace period.
+fn graceful_exit(app: &AppHandle<crate::BrowserEngine>, code: Option<i32>) {
+    let state = app.state::<DesktopSettingsState>();
+    if !state.flush_calls_in_progress.swap(true, Ordering::SeqCst) {
+        // Emit only to the main window if it is alive; otherwise there is
+        // nothing to flush and we can exit immediately.
+        if let Some(window) = app.get_webview_window(crate::MAIN_WINDOW_LABEL) {
+            let _ = window.emit(FLUSH_CALLS_BEFORE_EXIT_EVENT, ());
+        }
+    }
+    let handle = app.clone();
+    let exit_code = code.unwrap_or(0);
+    // Let tauri finish draining its loop after the webview flush window before
+    // the explicit exit, so `ExitRequested` does not loop back into us.
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(FLUSH_CALLS_BEFORE_EXIT_TIMEOUT_MS));
+        handle.exit(exit_code);
+    });
+}
+
 fn handle_exit_request(
     app: &AppHandle<crate::BrowserEngine>,
     code: Option<i32>,
@@ -341,9 +385,23 @@ fn handle_exit_request(
 ) {
     let settings = current_desktop_settings(app);
     let runtime = desktop_runtime_state(app);
-    if exit_request_action(settings, runtime, code) == ExitRequestAction::CloseWindowsToBackground {
-        api.prevent_exit();
-        close_all_windows(app);
+    match exit_request_action(settings, runtime, code) {
+        ExitRequestAction::AllowExit => {
+            let state = app.state::<DesktopSettingsState>();
+            // If a flush is already in progress this is the loopback from the
+            // flush thread's `app.exit`, so let the exit proceed immediately.
+            if state.flush_calls_in_progress.load(Ordering::SeqCst) {
+                return;
+            }
+            // Defer the actual exit until the webview has a chance to flush
+            // active calls, then exit in the background thread.
+            api.prevent_exit();
+            graceful_exit(app, code);
+        }
+        ExitRequestAction::CloseWindowsToBackground => {
+            api.prevent_exit();
+            close_all_windows(app);
+        }
     }
 }
 
@@ -457,7 +515,7 @@ pub fn create_system_tray(app: &AppHandle<crate::BrowserEngine>) -> tauri::Resul
                     let _ = crate::show_or_create_main_window(app);
                 }
                 TRAY_MENU_QUIT_ID => {
-                    app.exit(0);
+                    graceful_exit(app, None);
                 }
                 _ => {}
             }),

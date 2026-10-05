@@ -16,7 +16,7 @@ import LogoSVG from '$public/res/svg/logo.svg';
 import NotificationSound from '$public/sound/notification.ogg';
 import InviteSound from '$public/sound/invite.ogg';
 import { isPageVisible, isWindowFocused, notificationPermission } from '$utils/dom';
-import { playNotificationSound } from '$utils/notificationSound';
+import { playNotificationSound, shouldPlayBundledSound } from '$utils/notificationSound';
 import {
   getTauriNotificationsApi,
   isAndroidTauri,
@@ -338,6 +338,11 @@ export function MessageNotifications() {
       const tabVisible = isPageVisible();
       const withSound =
         notificationSound && isLoud && (isWindowFocused() || backgroundNotificationSounds);
+      // Bundle sounds by source (room): when many notifications arrive from the
+      // same room in quick succession (e.g. a bridge backfilling a freshly-created
+      // room), only the first one plays a sound so the user isn't spammed. This
+      // gates both the OS notification sound and the in-app sound.
+      const bundledSound = withSound && shouldPlayBundledSound(room.roomId);
       let soundOnNotification = false;
       if (
         (!isMobileOrTablet() || isIosTauri()) &&
@@ -364,7 +369,7 @@ export function MessageNotifications() {
               showMessageContent,
               showEncryptedMessageContent,
             }),
-            silent: !notificationSound || !isLoud,
+            silent: !bundledSound,
             eventId,
           });
           if (isNativeNotificationTauri()) {
@@ -376,7 +381,7 @@ export function MessageNotifications() {
             const userId = mx.getUserId();
             if (userId) extra.user_id = userId;
             // iOS plays content.sound or nothing, so the sound rides on the notification.
-            soundOnNotification = isIosTauri() && withSound;
+            soundOnNotification = isIosTauri() && bundledSound;
             sendNativeTauriNotification({
               title: osPayload.title,
               body: osPayload.options.body,
@@ -404,7 +409,7 @@ export function MessageNotifications() {
         }
       }
 
-      if (withSound && !soundOnNotification) {
+      if (bundledSound && !soundOnNotification) {
         playSound();
       }
 

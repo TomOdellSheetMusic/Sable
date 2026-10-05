@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { playNotificationSound as PlayNotificationSound } from './notificationSound';
+import type {
+  playNotificationSound as PlayNotificationSound,
+  shouldPlayBundledSound as ShouldPlayBundledSound,
+} from './notificationSound';
 
 let playNotificationSound: typeof PlayNotificationSound;
+let shouldPlayBundledSound: typeof ShouldPlayBundledSound;
 
 type MockSource = {
   buffer: AudioBuffer | null;
@@ -52,7 +56,7 @@ class MockAudioContext {
 
 beforeEach(async () => {
   vi.resetModules();
-  ({ playNotificationSound } = await import('./notificationSound'));
+  ({ playNotificationSound, shouldPlayBundledSound } = await import('./notificationSound'));
   sources = [];
   audioContexts = [];
   failToStartAudioDevice = false;
@@ -97,5 +101,37 @@ describe('playNotificationSound', () => {
     expect(sources).toHaveLength(2);
     expect(audioContexts[0]!.close).toHaveBeenCalledOnce();
     expect(sources[0]!.disconnect).toHaveBeenCalledOnce();
+  });
+});
+
+describe('shouldPlayBundledSound', () => {
+  it('plays the first notification from a source', () => {
+    expect(shouldPlayBundledSound('!room:example.org')).toBe(true);
+  });
+
+  it('bundles (silences) subsequent notifications from the same source within the window', () => {
+    expect(shouldPlayBundledSound('!room:example.org')).toBe(true);
+    expect(shouldPlayBundledSound('!room:example.org')).toBe(false);
+    expect(shouldPlayBundledSound('!room:example.org')).toBe(false);
+  });
+
+  it('does not bundle notifications from different sources', () => {
+    expect(shouldPlayBundledSound('!roomA:example.org')).toBe(true);
+    expect(shouldPlayBundledSound('!roomB:example.org')).toBe(true);
+    expect(shouldPlayBundledSound('!roomA:example.org')).toBe(false);
+    expect(shouldPlayBundledSound('!roomB:example.org')).toBe(false);
+  });
+
+  it('allows a source to play again after the bundling window elapses', () => {
+    vi.useFakeTimers();
+    try {
+      expect(shouldPlayBundledSound('!room:example.org')).toBe(true);
+      expect(shouldPlayBundledSound('!room:example.org')).toBe(false);
+
+      vi.advanceTimersByTime(1500);
+      expect(shouldPlayBundledSound('!room:example.org')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

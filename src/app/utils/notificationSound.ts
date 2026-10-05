@@ -7,6 +7,29 @@ let context: AudioContext | undefined;
 let playingSource: AudioBufferSourceNode | undefined;
 const buffers = new Map<string, Promise<AudioBuffer>>();
 
+// Bundling: when many notifications arrive from the same source in quick
+// succession (e.g. a bridge backfilling a freshly-created room), we only want
+// to play the sound once. Each source records the last time a sound was played
+// for it; subsequent notifications within the window are silenced.
+const sourceCooldowns = new Map<string, number>();
+const BUNDLE_WINDOW_MS = 1500;
+
+/**
+ * Returns true if a sound should play for the given source, and records the
+ * play time. When multiple notifications arrive from the same source within
+ * the bundling window, only the first one plays a sound — the rest are bundled
+ * (silenced). This prevents notification-sound spam during bridge backfills.
+ */
+export const shouldPlayBundledSound = (source: string): boolean => {
+  const now = Date.now();
+  const lastPlayed = sourceCooldowns.get(source);
+  if (lastPlayed !== undefined && now - lastPlayed < BUNDLE_WINDOW_MS) {
+    return false;
+  }
+  sourceCooldowns.set(source, now);
+  return true;
+};
+
 const decode = (ctx: AudioContext, url: string): Promise<AudioBuffer> => {
   const cached = buffers.get(url);
   if (cached) return cached;

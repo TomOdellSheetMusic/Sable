@@ -134,4 +134,24 @@ describe('shouldPlayBundledSound', () => {
       vi.useRealTimers();
     }
   });
+
+  it('refreshes the bundling window while a source keeps sending notifications', () => {
+    vi.useFakeTimers();
+    try {
+      expect(shouldPlayBundledSound('!room:example.org')).toBe(true);
+
+      // A sustained burst: each notification refreshes the window, so the sound
+      // stays silenced even past the initial 1500ms window.
+      for (let i = 0; i < 10; i++) {
+        vi.advanceTimersByTime(1000);
+        expect(shouldPlayBundledSound('!room:example.org')).toBe(false);
+      }
+
+      // Once the source goes quiet for the full window, it can alert again.
+      vi.advanceTimersByTime(1500);
+      expect(shouldPlayBundledSound('!room:example.org')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

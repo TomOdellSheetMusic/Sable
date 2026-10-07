@@ -12,21 +12,27 @@ const buffers = new Map<string, Promise<AudioBuffer>>();
 // to play the sound once. Each source records the last time a sound was played
 // for it; subsequent notifications within the window are silenced.
 const sourceCooldowns = new Map<string, number>();
-const BUNDLE_WINDOW_MS = 1500;
+const BUNDLE_WINDOW_MS = 2000;
 
 /**
  * Returns true if a sound should play for the given source, and records the
  * play time. When multiple notifications arrive from the same source within
  * the bundling window, only the first one plays a sound — the rest are bundled
- * (silenced). This prevents notification-sound spam during bridge backfills.
+ * (silenced). The window is refreshed on every notification, so a source that
+ * keeps sending messages (e.g. a bridge backfilling a room) stays silenced for
+ * as long as the messages keep coming. This prevents notification-sound spam
+ * during bridge backfills.
  */
 export const shouldPlayBundledSound = (source: string): boolean => {
   const now = Date.now();
   const lastPlayed = sourceCooldowns.get(source);
+  // Always refresh the cooldown so the window slides forward while the source
+  // keeps producing notifications — a sustained burst stays bundled rather than
+  // re-alerting once the initial window elapses.
+  sourceCooldowns.set(source, now);
   if (lastPlayed !== undefined && now - lastPlayed < BUNDLE_WINDOW_MS) {
     return false;
   }
-  sourceCooldowns.set(source, now);
   return true;
 };
 
